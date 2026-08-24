@@ -124,6 +124,31 @@ STATUS_MSG = {
 }
 
 
+def _combo_matches(combo: dict, product_id: str, color_name: str | None, skein_weight) -> bool:
+    """Whether one cart line qualifies for this combo.
+
+    `combo["product_ids"]` entries mean one of two things:
+    - a bare product id -> any shade of that product is eligible (this is
+      the original, and still fully supported, meaning — nothing that
+      already relies on it changes).
+    - `"<product_id>::<color_name>"` -> only that exact shade is eligible
+      (admin picked specific colour variants, e.g. specific shades of a
+      product that has many).
+    Falls back to the weight-based auto-match mode when neither matches.
+    """
+    ids = combo.get("product_ids") or []
+    if str(product_id) in ids:
+        return True
+    if color_name and f"{product_id}::{color_name}" in ids:
+        return True
+    if combo.get("weight_target") is not None and skein_weight is not None:
+        try:
+            return float(skein_weight) == float(combo["weight_target"])
+        except (ValueError, TypeError):
+            return False
+    return False
+
+
 async def _build_bill(db, items_in, address, coupon, user_id=None):
     settings = await get_settings(db)
     order_items = []
@@ -187,16 +212,9 @@ async def _build_bill(db, items_in, address, coupon, user_id=None):
 
         available_units = []
         for state in cart_state:
-            is_eligible = False
-            if str(state["product_id"]) in combo.get("product_ids", []):
-                is_eligible = True
-            elif combo.get("weight_target") is not None:
-                try:
-                    if state["prod"].get("skein_weight") is not None and float(state["prod"]["skein_weight"]) == float(combo["weight_target"]):
-                        is_eligible = True
-                except (ValueError, TypeError):
-                    pass
-            
+            is_eligible = _combo_matches(
+                combo, state["product_id"], state["it"].color, state["prod"].get("skein_weight")
+            )
             if is_eligible and state["unbundled_qty"] > 0:
                 available_units.extend([(state["unit"], state)] * state["unbundled_qty"])
                     
@@ -216,16 +234,9 @@ async def _build_bill(db, items_in, address, coupon, user_id=None):
                 sorted_state = sorted(cart_state, key=lambda x: x["unit"], reverse=True)
                 units_to_remove = items_to_bundle
                 for state in sorted_state:
-                    is_eligible = False
-                    if str(state["product_id"]) in combo.get("product_ids", []):
-                        is_eligible = True
-                    elif combo.get("weight_target") is not None:
-                        try:
-                            if state["prod"].get("skein_weight") is not None and float(state["prod"]["skein_weight"]) == float(combo["weight_target"]):
-                                is_eligible = True
-                        except (ValueError, TypeError):
-                            pass
-                    
+                    is_eligible = _combo_matches(
+                        combo, state["product_id"], state["it"].color, state["prod"].get("skein_weight")
+                    )
                     if is_eligible:
                         take = min(state["unbundled_qty"], units_to_remove)
                         state["unbundled_qty"] -= take
