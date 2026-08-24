@@ -6,6 +6,25 @@ from app.models.common import serialize, to_object_id
 
 router = APIRouter(prefix="/combos", tags=["combos"])
 
+
+def _validate_combo(body: ComboIn) -> None:
+    """A manually-picked pool smaller than the Required Quantity can never
+    trigger a bundle (num_bundles = pool // qty in _build_bill would always
+    be 0) — that's never an intentional combo, so reject it outright rather
+    than let an admin save something that silently never works. Doesn't
+    apply to weight-matched combos: their "pool" is computed dynamically
+    from live stock at checkout time, not a fixed list.
+    """
+    if body.weight_target is None and len(body.product_ids) < body.qty:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Select at least {body.qty} eligible item(s) to match the Required "
+                f"Quantity ({body.qty}). Currently selected: {len(body.product_ids)}."
+            ),
+        )
+
+
 @router.get("")
 async def list_combos():
     db = get_db()
@@ -14,6 +33,7 @@ async def list_combos():
 
 @router.post("", dependencies=[Depends(require_admin)])
 async def create_combo(body: ComboIn):
+    _validate_combo(body)
     db = get_db()
     res = await db.combos.insert_one(body.model_dump())
     doc = await db.combos.find_one({"_id": res.inserted_id})
@@ -21,6 +41,7 @@ async def create_combo(body: ComboIn):
 
 @router.put("/{cid}", dependencies=[Depends(require_admin)])
 async def update_combo(cid: str, body: ComboIn):
+    _validate_combo(body)
     db = get_db()
     res = await db.combos.find_one_and_update(
         {"_id": to_object_id(cid)},

@@ -18,6 +18,7 @@ from app.services.pricing import (
     coupon_discount,
     get_settings,
     resolve_price,
+    variant_stock,
 )
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -161,6 +162,17 @@ async def _build_bill(db, items_in, address, coupon, user_id=None):
         prod = await db.products.find_one({"_id": to_object_id(it.product_id)})
         if not prod or not prod.get("is_active", True):
             raise HTTPException(status_code=400, detail="Product unavailable")
+        # Stock check happens before any payment is even initiated — this
+        # function backs both the /orders/quote preview and actual order
+        # creation, and create_order runs before the Razorpay checkout modal
+        # ever opens, so an oversell attempt is rejected up front.
+        available = variant_stock(prod, it.color)
+        if it.qty > available:
+            label = prod.get("title", "").strip() + (f" ({it.color})" if it.color else "")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Only {available} left of \"{label}\" — please lower the quantity.",
+            )
         # Price for the exact colour the customer chose (variant-aware).
         unit = resolve_price(prod, it.color)["final_price"]
         line_total = unit * it.qty
