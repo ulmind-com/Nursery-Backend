@@ -354,6 +354,63 @@ async def quote(body: OrderCreate, user: dict = Depends(get_current_user)):
     _, bill = await _build_bill(db, body.items, body.address, body.coupon_code, user["id"])
     return bill
 
+@router.post("/quote-debug")
+async def quote_debug(body: OrderCreate):
+    db = get_db()
+    cart_state = []
+    trace = []
+    subtotal = 0.0
+    for it in body.items:
+        prod = await db.products.find_one({"_id": to_object_id(it.product_id)})
+        unit = resolve_price(prod, it.color)["final_price"]
+        cart_state.append({
+            "product_id": it.product_id,
+            "unit": unit,
+            "qty": it.qty,
+            "it": it,
+            "prod": prod,
+            "unbundled_qty": it.qty
+        })
+        subtotal += unit * it.qty
+
+    now = datetime.now(timezone.utc)
+    combos = await db.combos.find({"active": True}).to_list(100)
+    trace.append(f"Found {len(combos)} combos")
+    for combo in combos:
+        start_date = combo.get("start_date")
+        if start_date and start_date.tzinfo is None:
+            start_date = start_date.replace(tzinfo=timezone.utc)
+        if start_date and now < start_date:
+            trace.append(f"Combo {combo.get('name')} skipped (starts in future: {start_date} vs {now})")
+            continue
+        
+        end_date = combo.get("end_date")
+        if end_date and end_date.tzinfo is None:
+            end_date = end_date.replace(tzinfo=timezone.utc)
+        if end_date and now > end_date:
+            trace.append(f"Combo {combo.get('name')} skipped (ended in past)")
+            continue
+
+        available_units = []
+        for state in cart_state:
+            is_eligible = _combo_matches(
+                combo, state["product_id"], state["it"].color, state["prod"].get("skein_weight")
+            )
+            trace.append(f"Checking item {state['product_id']} color {state['it'].color}: eligible={is_eligible}")
+            if is_eligible and state["unbundled_qty"] > 0:
+                available_units.extend([(state["unit"], state)] * state["unbundled_qty"])
+
+        available_units.sort(key=lambda x: x[0], reverse=True)
+        num_bundles = len(available_units) // combo.get("qty", 1)
+        trace.append(f"Num bundles for {combo.get('name')}: {num_bundles} (avail={len(available_units)}, qty={combo.get('qty', 1)})")
+        if num_bundles > 0:
+            items_to_bundle = num_bundles * combo["qty"]
+            regular = sum(u[0] for u in available_units[:items_to_bundle])
+            bundle_price = num_bundles * combo["price"]
+            disc = regular - bundle_price
+            trace.append(f"Discount: {disc}")
+    return {"trace": trace}
+
 
 async def _decrement_stock(db, order_items):
     for it in order_items:
