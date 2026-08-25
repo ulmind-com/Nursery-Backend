@@ -7,7 +7,8 @@ from app.db.mongodb import get_db
 from app.deps import get_current_user, require_admin
 from app.models.common import serialize, to_object_id
 from app.models.waitlist import WaitlistCreate
-from app.services.pricing import price_span, total_stock
+from app.services.pricing import price_span, total_stock, variant_stock
+from app.services.waitlist_service import notify_restocked
 
 router = APIRouter(prefix="/waitlist", tags=["waitlist"])
 
@@ -87,12 +88,16 @@ async def waitlist_summary():
         waiting = []
         for w in entries:
             u = users.get(w.get("user_id"), {})
+            # The exact shade this customer is waiting for may still be at 0
+            # even when the product's aggregate stock (shown above) is > 0 —
+            # surface the real number so that's never mistaken for a stuck entry.
             waiting.append({
                 "user_id": w.get("user_id"),
                 "name": u.get("name") or "Unknown customer",
                 "email": u.get("email") or "",
                 "phone": u.get("phone") or "",
                 "color_name": w.get("color_name"),
+                "shade_stock": variant_stock(p, w.get("color_name")),
                 "waiting_since": w.get("created_at"),
             })
 
@@ -107,9 +112,24 @@ async def waitlist_summary():
 
 @router.post("/admin/{product_id}/resolve", dependencies=[Depends(require_admin)])
 async def resolve_waitlist(product_id: str):
+    """Manual override: force-email every pending waiter for this product
+    right now, regardless of current stock. Restocking a product normally
+    notifies everyone automatically the moment its stock is saved (see
+    `waitlist_service.notify_restocked`, called from `PATCH /products/{id}`)
+    — this exists only as a fallback for an admin who wants to notify anyway
+    (e.g. the automatic check somehow missed a shade).
+    """
     db = get_db()
-    res = await db.waitlist.update_many(
-        {"product_id": product_id, "status": "pending"},
-        {"$set": {"status": "notified", "updated_at": datetime.now(timezone.utc)}}
-    )
-    return {"success": True, "resolved_count": res.modified_count}
+    pending = await db.waitlist.find(
+        {"product_id": product_id, "status": "pending"}
+    ).to_list(length=2000)
+    if not pending:
+        return {"success": True, "resolved_count": 0}
+
+    prod = await db.products.find_one({"_id": to_object_id(product_id)})
+    if not prod:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    keys = {w.get("color_name") for w in pending}
+    sent = await notify_restocked(db, prod, keys)
+    return {"success": True, "resolved_count": sent}
