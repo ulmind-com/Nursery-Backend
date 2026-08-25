@@ -40,6 +40,29 @@ async def admin_user_count():
     return {"count": count, "online_now": online_now, "new_today": new_today}
 
 
+@router.get("/admin/online", dependencies=[Depends(require_admin)])
+async def admin_online_users():
+    """Admin dashboard: who is online right now (same 5-minute heartbeat
+    window as /admin/count's `online_now` number), most-recently-active first.
+    """
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    docs = await db.users.find(
+        {"role": {"$ne": "admin"}, "last_active_at": {"$gte": now - _ONLINE_WINDOW}},
+        {"name": 1, "email": 1, "avatar": 1, "last_active_at": 1},
+    ).sort("last_active_at", -1).to_list(length=500)
+    return [
+        {
+            "id": str(d["_id"]),
+            "name": d.get("name") or "Unknown customer",
+            "email": d.get("email", ""),
+            "avatar": d.get("avatar"),
+            "last_active_at": d.get("last_active_at"),
+        }
+        for d in docs
+    ]
+
+
 @router.get("/admin/list", dependencies=[Depends(require_admin)])
 async def list_users(q: str | None = None, limit: int = 100):
     """Admin: search users (by name/email) to target a notification."""
