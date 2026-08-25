@@ -25,7 +25,7 @@ def restocked_color_keys(before: dict, after: dict) -> set:
         if isinstance(c, dict) and c.get("name")
     }
     names.add(None)
-    return {n for n in names if variant_stock(before, n) <= 0 < variant_stock(after, n)}
+    return {n for n in names if variant_stock(before, n) < variant_stock(after, n)}
 
 
 def _product_url(product_id: str) -> str:
