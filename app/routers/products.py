@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -7,6 +8,7 @@ from app.deps import require_admin
 from app.models.common import serialize, to_object_id
 from app.models.product import ProductCreate, ProductUpdate
 from app.services.pricing import price_span, total_stock
+from app.services.waitlist_service import notify_restocked_safely, restocked_color_keys
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -89,11 +91,23 @@ async def update_product(product_id: str, body: ProductUpdate):
     update = {k: v for k, v in body.model_dump().items() if v is not None}
     if not update:
         raise HTTPException(status_code=400, detail="Nothing to update")
+
+    # Only a save that actually touches stock can restock anything — skip the
+    # extra lookup (and the waitlist check) for ordinary metadata edits.
+    stock_touched = "colors" in update or "stock" in update
+    before = await db.products.find_one({"_id": to_object_id(product_id)}) if stock_touched else None
+
     res = await db.products.find_one_and_update(
         {"_id": to_object_id(product_id)}, {"$set": update}, return_document=True
     )
     if not res:
         raise HTTPException(status_code=404, detail="Product not found")
+
+    if before:
+        keys = restocked_color_keys(before, res)
+        if keys:
+            asyncio.create_task(notify_restocked_safely(db, res, keys))
+
     return _decorate(res)
 
 
