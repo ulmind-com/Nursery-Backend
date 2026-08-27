@@ -11,7 +11,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 # Order statuses that count as a real (paid/confirmed) order for a customer's
 # lifetime stats — abandoned online orders (status "placed") are excluded.
-_REAL_ORDER = ["confirmed", "shipped", "out_for_delivery", "delivered"]
+_REAL_ORDER = ["placed", "confirmed", "shipped", "out_for_delivery", "delivered"]
 
 _ONLINE_WINDOW = timedelta(minutes=5)
 _IST = ZoneInfo("Asia/Kolkata")
