@@ -33,9 +33,12 @@ def verify_password(password: str, stored: str) -> bool:
 
 # --- JWT (HS256, stdlib-backed) ---
 def create_access_token(subject: str, role: str = "user") -> str:
-    expire = datetime.now(timezone.utc) + timedelta(
-        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+    ttl = (
+        settings.ADMIN_TOKEN_EXPIRE_MINUTES
+        if role == "admin"
+        else settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ttl)
     payload = {"sub": subject, "role": role, "exp": expire}
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
