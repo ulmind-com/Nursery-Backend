@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "change-me"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days
+    ADMIN_TOKEN_EXPIRE_MINUTES: int = 525600  # 1 year
 
     CORS_ORIGINS: str = "*"
 
