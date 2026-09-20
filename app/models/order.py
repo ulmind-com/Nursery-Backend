@@ -4,8 +4,8 @@ from pydantic import BaseModel, Field
 class OrderItemIn(BaseModel):
     product_id: str
     qty: int = Field(ge=1)
-    color: str | None = None
-    size: str | None = None
+    size_variant: str | None = None     # "Small", "Medium", "Large" etc.
+    pot_type: str | None = None         # "Nursery Pot", "Ceramic Pot", etc.
 
 
 class Address(BaseModel):
@@ -26,6 +26,8 @@ class OrderCreate(BaseModel):
     address: Address
     payment_method: str = "online"
     coupon_code: str | None = None
+    is_gift: bool = False
+    gift_note: str | None = None        # hand-written note for gifting
 
 
 class OrderVerify(BaseModel):

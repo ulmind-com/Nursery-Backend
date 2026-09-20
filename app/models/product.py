@@ -1,24 +1,44 @@
 from pydantic import BaseModel, Field, ConfigDict
 
 
-class FiberContent(BaseModel):
-    """Schema for yarn fiber composition, e.g., 80% Merino Wool."""
-    fiber: str
-    percentage: int = Field(ge=1, le=100)
+class PlantSpec(BaseModel):
+    """Plant-specific specifications — displayed on the product detail page."""
+    plant_type: str | None = None          # Indoor, Outdoor, Indoor/Outdoor
+    sunlight: str | None = None            # Full Sun, Partial Shade, Low Light, Bright Indirect
+    watering: str | None = None            # Daily, Alternate Days, Weekly, Twice a Week
+    difficulty_level: str | None = None    # Easy, Medium, Hard
+    height_range: str | None = None        # "6-12 inches", "1-3 feet"
+    spread: str | None = None              # "6-12 inches"
+    flowering: bool = False
+    flower_color: str | None = None
+    fragrant: bool = False
+    pet_safe: bool = False
+    air_purifying: bool = False
+    medicinal: bool = False
+    season: str | None = None              # All Season, Summer, Winter, Monsoon
+    soil_type: str | None = None           # Well-drained, Loamy, Sandy, Red Soil
+    growth_rate: str | None = None         # Slow, Medium, Fast
+    max_height: str | None = None          # "Up to 6 feet"
+    origin: str | None = None              # "Tropical Asia"
+    scientific_name: str | None = None     # "Spathiphyllum"
+    common_names: list[str] = Field(default_factory=list)  # alternate names
+    temperature_range: str | None = None   # "18-30°C"
+    humidity: str | None = None            # Low, Medium, High
 
 
-class ColorVariant(BaseModel):
-    color_family: str | None = None    # e.g. "Red", "Blue", "Multi"
-    name: str                          # e.g. "Orange"
-    shade_code: str | None = None      # e.g. "OLV001" — admin-assigned wool shade code
-    hex: str = "#000000"               # swatch colour fallback
-    swatch_image: str | None = None    # image URL for the swatch (yarn texture)
-    images: list[str] = []             # images shown when this colour is picked
-    price: float | None = None         # per-colour selling price (falls back to base)
-    mrp: float | None = None           # per-colour MRP (falls back to base)
-    discount_pct: float | None = None  # per-colour extra discount % (falls back to base)
-    discount_on: str | None = None     # "price" | "mrp" (falls back to base)
-    stock: int = 0                     # inventory for this colour
+class SizeVariant(BaseModel):
+    """Plant size / pot combination variant."""
+    name: str                              # "Small", "Medium", "Large", "XL"
+    pot_size: str | None = None            # "4 inch", "6 inch", "8 inch", "10 inch"
+    pot_type: str | None = None            # "Nursery Pot", "Ceramic Pot", "GraPot", "Terracotta"
+    pot_color: str | None = None           # "White", "Black", "Terracotta"
+    height: str | None = None              # "6-8 inches" (plant height at this size)
+    price: float | None = None             # selling price for this size
+    mrp: float | None = None               # MRP for this size
+    discount_pct: float | None = None      # discount % for this size
+    stock: int = 0
+    images: list[str] = []
+    sku: str | None = None                 # per-variant SKU
 
 
 class ProductCreate(BaseModel):
@@ -29,15 +49,13 @@ class ProductCreate(BaseModel):
     short_description: str | None = None
     tags: list[str] = Field(default_factory=list)
     brand: str | None = None
-    product_line: str | None = None
     category_id: str | None = None
 
     sku: str | None = None
     shipping_weight: float | None = None
-    country_of_origin: str | None = None
 
-    mrp: float = Field(ge=0)                    # actual price (struck through)
-    price: float = Field(ge=0)                  # needed / selling price
+    mrp: float = Field(ge=0)                    # base MRP (struck through)
+    price: float = Field(ge=0)                  # base selling price
     discount_pct: float = Field(default=0, ge=0, le=95)  # admin extra discount
     discount_on: str = "price"                  # "mrp" | "price"
 
@@ -45,25 +63,17 @@ class ProductCreate(BaseModel):
     sgst: float | None = None                   # SGST % (same-state orders)
     igst: float | None = None                   # IGST % (inter-state orders)
 
-    primary_color_name: str | None = None       # e.g., "Azure Blue"
-    primary_color_hex: str | None = None        # e.g., "#007FFF"
-    primary_color_family: str | None = None     # e.g., "Blue"
-    primary_shade_code: str | None = None       # e.g., "OLV001" — admin-assigned wool shade code
+    images: list[str] = []                      # general gallery
+    sizes: list[SizeVariant] = []               # size/pot variants
 
-    images: list[str] = []                      # general gallery (no colour)
-    colors: list[ColorVariant] = []             # colour-wise images + stock
-    
-    # --- YARN SPECIFIC SPECS ---
-    yarn_weight: str | None = None              # e.g., "DK", "Worsted"
-    fiber_content: list[FiberContent] = Field(default_factory=list)
-    yardage: int | None = Field(default=None, description="Yardage/Meterage per skein")
-    skein_weight: int | None = Field(default=None, description="Weight in grams per skein")
-    gauge_info: str | None = None               # e.g., "22 sts = 4 inches on 4mm needles"
-    hook_size: str | None = None                # e.g., "5.0 mm (H)"
-    certifications: str | None = None           # e.g., "Oeko-Tex Standard 100"
-    care_instructions: str | None = None        # e.g., "Hand wash only"
+    # --- PLANT SPECIFIC ---
+    plant_spec: PlantSpec = Field(default_factory=PlantSpec)
+    care_instructions: str | None = None        # detailed care paragraph
+    care_tips: list[str] = Field(default_factory=list)  # quick bullet tips
+    includes: list[str] = Field(default_factory=list)   # "Plant", "Pot", "Soil", "Pebbles"
+    warranty: str | None = None                 # "30-day plant guarantee"
 
-    stock: int = 0                              # used when there are no colour variants
+    stock: int = 0                              # used when there are no size variants
     low_stock_threshold: int = 5
 
     rating: float = Field(default=0, ge=0, le=5)
@@ -72,6 +82,8 @@ class ProductCreate(BaseModel):
 
     is_active: bool = True
     is_featured: bool = False
+    is_bestseller: bool = False
+    is_new_arrival: bool = False
 
 
 class ProductUpdate(BaseModel):
@@ -82,11 +94,9 @@ class ProductUpdate(BaseModel):
     short_description: str | None = None
     tags: list[str] | None = None
     brand: str | None = None
-    product_line: str | None = None
     category_id: str | None = None
     sku: str | None = None
     shipping_weight: float | None = None
-    country_of_origin: str | None = None
     mrp: float | None = None
     price: float | None = None
     discount_pct: float | None = None
@@ -94,24 +104,16 @@ class ProductUpdate(BaseModel):
     cgst: float | None = None
     sgst: float | None = None
     igst: float | None = None
-    
-    primary_color_name: str | None = None
-    primary_color_hex: str | None = None
-    primary_color_family: str | None = None
-    primary_shade_code: str | None = None
 
     images: list[str] | None = None
-    colors: list[ColorVariant] | None = None
-    
-    # --- YARN SPECIFIC SPECS ---
-    yarn_weight: str | None = None
-    fiber_content: list[FiberContent] | None = None
-    yardage: int | None = None
-    skein_weight: int | None = None
-    gauge_info: str | None = None
-    hook_size: str | None = None
-    certifications: str | None = None
+    sizes: list[SizeVariant] | None = None
+
+    # --- PLANT SPECIFIC ---
+    plant_spec: PlantSpec | None = None
     care_instructions: str | None = None
+    care_tips: list[str] | None = None
+    includes: list[str] | None = None
+    warranty: str | None = None
 
     stock: int | None = None
     low_stock_threshold: int | None = None
@@ -120,3 +122,5 @@ class ProductUpdate(BaseModel):
     sold_count: int | None = None
     is_active: bool | None = None
     is_featured: bool | None = None
+    is_bestseller: bool | None = None
+    is_new_arrival: bool | None = None

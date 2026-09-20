@@ -3,25 +3,22 @@ from pydantic import BaseModel, Field
 
 class DeliveryConfig(BaseModel):
     # Free delivery threshold
-    free_above: float = 0              # order subtotal for free delivery (0 = off)
-    
+    free_above: float = 499             # order subtotal for free delivery (0 = off)
+
     # Home State Pricing
     home_state: str = "West Bengal"
-    home_base_fee: float = 65          # flat fee for up to base_weight_kg
-    home_base_weight_kg: float = 1     # usually 1kg
-    home_extra_fee_per_kg: float = 0   # charge per extra kg above base weight
-    
+    home_base_fee: float = 65           # flat fee for up to base_weight_kg
+    home_base_weight_kg: float = 2      # plants are heavier
+    home_extra_fee_per_kg: float = 25   # charge per extra kg above base weight
+
     # Rest of India Pricing
-    rest_base_fee: float = 100         # flat fee for up to base_weight_kg
-    rest_base_weight_kg: float = 1
-    rest_extra_fee_per_kg: float = 0
-
-
-
+    rest_base_fee: float = 99           # flat fee for up to base_weight_kg
+    rest_base_weight_kg: float = 2
+    rest_extra_fee_per_kg: float = 35
 
 
 class ShopConfig(BaseModel):
-    name: str = "Royaall Wool"
+    name: str = "Plant Nursery"
     address: str = ""
     phone: str = ""
     email: str = ""          # support email surfaced to customers (chat, help)
@@ -43,19 +40,27 @@ class SupportConfig(BaseModel):
     source of truth; everything else the card renders is editable here. A blank
     string means "hide that row", so the admin can drop a channel without code.
     """
-    title: str = "We're always here to help you."
+    title: str = "Stuck with plant care? We're here to help."
     note: str = "Reach us on whichever channel suits you."
     hotline_label: str = "Hotline"
     email_label: str = "Email"
-    address_label: str = "Studio"
-    whatsapp: str = "+91 89107 92214"  # display number; blank hides the row
+    address_label: str = "Nursery"
+    whatsapp: str = ""                 # display number; blank hides the row
     whatsapp_label: str = "SMS / WhatsApp"
-    whatsapp_message: str = "Hi Royaall Wool, I have a question about your yarns."
+    whatsapp_message: str = "Hi, I have a question about your plants."
     hours: str = "Open 10am – 7pm IST, every day"
     socials: list[SocialLink] = Field(default_factory=lambda: [
-        SocialLink(label="Instagram", href="https://www.instagram.com/royaallwool"),
-        SocialLink(label="Facebook", href="https://www.facebook.com/share/1SEBGxnKW6/"),
+        SocialLink(label="Instagram", href=""),
+        SocialLink(label="Facebook", href=""),
     ])
+
+
+class PlantGuaranteeConfig(BaseModel):
+    """Plant health guarantee settings."""
+    enabled: bool = True
+    days: int = 30
+    label: str = "30-Day Plant Guarantee"
+    description: str = "If your plant doesn't survive within 30 days, we'll replace it free of charge."
 
 
 class Settings(BaseModel):
@@ -66,12 +71,13 @@ class Settings(BaseModel):
     shop: ShopConfig = ShopConfig()
     delivery: DeliveryConfig = DeliveryConfig()
     support: SupportConfig = SupportConfig()
-    
+    plant_guarantee: PlantGuaranteeConfig = PlantGuaranteeConfig()
+
     announcements: list[str] = Field(default=[
-        "Free delivery on orders above {free_delivery}",
-        "{coupon}",
-        "Support 10am–7pm IST, all days",
-        "Small-batch colour, wound for stitch definition"
+        "🌿 Free shipping on orders above ₹499",
+        "🌱 30-Day Plant Guarantee on all plants",
+        "🪴 Buy any 4 plants @ ₹1,199",
+        "📞 Support 10am–7pm IST, all days",
     ])
 
 
@@ -83,4 +89,5 @@ class SettingsUpdate(BaseModel):
     shop: ShopConfig | None = None
     delivery: DeliveryConfig | None = None
     support: SupportConfig | None = None
+    plant_guarantee: PlantGuaranteeConfig | None = None
     announcements: list[str] | None = None

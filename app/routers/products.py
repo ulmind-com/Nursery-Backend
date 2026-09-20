@@ -8,7 +8,7 @@ from app.deps import require_admin
 from app.models.common import serialize, to_object_id
 from app.models.product import ProductCreate, ProductUpdate
 from app.services.pricing import price_span, total_stock
-from app.services.waitlist_service import notify_restocked_safely, restocked_color_keys
+from app.services.waitlist_service import notify_restocked_safely, restocked_size_keys
 
 router = APIRouter(prefix="/products", tags=["products"])
 
@@ -19,8 +19,8 @@ def _total_stock(doc: dict) -> int:
 
 def _decorate(doc: dict) -> dict:
     d = serialize(doc)
-    # drop any legacy string colours so the client always gets variant objects
-    d["colors"] = [c for c in (d.get("colors") or []) if isinstance(c, dict)]
+    # ensure sizes are always a list of dicts
+    d["sizes"] = [s for s in (d.get("sizes") or []) if isinstance(s, dict)]
     d.update(price_span(d))  # final_price + price_from/to + price_varies
     stock = total_stock(d)
     d["total_stock"] = stock
@@ -41,8 +41,18 @@ async def list_products(
     category_id: str | None = None,
     q: str | None = Query(default=None),
     brand: str | None = None,
-    product_line: str | None = None,
-    skein_weight: int | None = None,
+    plant_type: str | None = None,
+    sunlight: str | None = None,
+    difficulty: str | None = None,
+    pet_safe: bool | None = None,
+    air_purifying: bool | None = None,
+    flowering: bool | None = None,
+    is_bestseller: bool | None = None,
+    is_new_arrival: bool | None = None,
+    is_featured: bool | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    sort_by: str | None = None,
     limit: int = Query(default=20, le=200),
     skip: int = 0,
     admin: bool = False,
@@ -57,11 +67,45 @@ async def list_products(
         query["$text"] = {"$search": q}
     if brand:
         query["brand"] = brand
-    if product_line:
-        query["product_line"] = product_line
-    if skein_weight is not None:
-        query["skein_weight"] = skein_weight
-    cursor = db.products.find(query).skip(skip).limit(limit).sort("created_at", -1)
+    if plant_type:
+        query["plant_spec.plant_type"] = plant_type
+    if sunlight:
+        query["plant_spec.sunlight"] = sunlight
+    if difficulty:
+        query["plant_spec.difficulty_level"] = difficulty
+    if pet_safe is not None:
+        query["plant_spec.pet_safe"] = pet_safe
+    if air_purifying is not None:
+        query["plant_spec.air_purifying"] = air_purifying
+    if flowering is not None:
+        query["plant_spec.flowering"] = flowering
+    if is_bestseller is not None:
+        query["is_bestseller"] = is_bestseller
+    if is_new_arrival is not None:
+        query["is_new_arrival"] = is_new_arrival
+    if is_featured is not None:
+        query["is_featured"] = is_featured
+    if min_price is not None:
+        query["price"] = query.get("price", {})
+        query["price"]["$gte"] = min_price
+    if max_price is not None:
+        query["price"] = query.get("price", {})
+        query["price"]["$lte"] = max_price
+
+    # Sorting
+    sort_field, sort_dir = "created_at", -1
+    if sort_by == "price_asc":
+        sort_field, sort_dir = "price", 1
+    elif sort_by == "price_desc":
+        sort_field, sort_dir = "price", -1
+    elif sort_by == "rating":
+        sort_field, sort_dir = "rating", -1
+    elif sort_by == "popularity":
+        sort_field, sort_dir = "sold_count", -1
+    elif sort_by == "newest":
+        sort_field, sort_dir = "created_at", -1
+
+    cursor = db.products.find(query).skip(skip).limit(limit).sort(sort_field, sort_dir)
     docs = await cursor.to_list(length=limit)
     return [_decorate(d) for d in docs]
 
@@ -94,7 +138,7 @@ async def update_product(product_id: str, body: ProductUpdate):
 
     # Only a save that actually touches stock can restock anything — skip the
     # extra lookup (and the waitlist check) for ordinary metadata edits.
-    stock_touched = "colors" in update or "stock" in update
+    stock_touched = "sizes" in update or "stock" in update
     before = await db.products.find_one({"_id": to_object_id(product_id)}) if stock_touched else None
 
     res = await db.products.find_one_and_update(
@@ -104,7 +148,7 @@ async def update_product(product_id: str, body: ProductUpdate):
         raise HTTPException(status_code=404, detail="Product not found")
 
     if before:
-        keys = restocked_color_keys(before, res)
+        keys = restocked_size_keys(before, res)
         if keys:
             asyncio.create_task(notify_restocked_safely(db, res, keys))
 

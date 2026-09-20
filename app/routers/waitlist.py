@@ -34,7 +34,7 @@ async def join_waitlist(body: WaitlistCreate, user: dict = Depends(get_current_u
     doc = {
         "user_id": user["id"],
         "product_id": body.product_id,
-        "color_name": body.color_name,
+        "size_name": body.size_name,
         "status": "pending",
         "created_at": datetime.now(timezone.utc),
         "updated_at": datetime.now(timezone.utc)
@@ -88,7 +88,7 @@ async def waitlist_summary():
         waiting = []
         for w in entries:
             u = users.get(w.get("user_id"), {})
-            # The exact shade this customer is waiting for may still be at 0
+            # The exact size this customer is waiting for may still be at 0
             # even when the product's aggregate stock (shown above) is > 0 —
             # surface the real number so that's never mistaken for a stuck entry.
             waiting.append({
@@ -96,8 +96,8 @@ async def waitlist_summary():
                 "name": u.get("name") or "Unknown customer",
                 "email": u.get("email") or "",
                 "phone": u.get("phone") or "",
-                "color_name": w.get("color_name"),
-                "shade_stock": variant_stock(p, w.get("color_name")),
+                "size_name": w.get("size_name"),
+                "size_stock": variant_stock(p, w.get("size_name")),
                 "waiting_since": w.get("created_at"),
             })
 
@@ -117,7 +117,7 @@ async def resolve_waitlist(product_id: str):
     notifies everyone automatically the moment its stock is saved (see
     `waitlist_service.notify_restocked`, called from `PATCH /products/{id}`)
     — this exists only as a fallback for an admin who wants to notify anyway
-    (e.g. the automatic check somehow missed a shade).
+    (e.g. the automatic check somehow missed a size).
     """
     db = get_db()
     pending = await db.waitlist.find(
@@ -130,6 +130,6 @@ async def resolve_waitlist(product_id: str):
     if not prod:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    keys = {w.get("color_name") for w in pending}
+    keys = {w.get("size_name") for w in pending}
     sent = await notify_restocked(db, prod, keys)
     return {"success": True, "resolved_count": sent}

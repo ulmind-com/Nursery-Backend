@@ -11,11 +11,11 @@ class WaitlistRequest(BaseModel):
     id: PyObjectId | None = Field(alias="_id", default=None)
     user_id: str
     product_id: str
-    color_name: str | None = None
+    size_name: str | None = None       # which size variant they're waiting for
     status: str = "pending"  # pending | notified
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 class WaitlistCreate(BaseModel):
     product_id: str
-    color_name: str | None = None
+    size_name: str | None = None

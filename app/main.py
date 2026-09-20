@@ -21,9 +21,6 @@ from app.routers import (
     home_sections,
     orders,
     products,
-    product_lines,
-    certifications,
-    countries,
     recommendations,
     reviews,
     search,
@@ -91,10 +88,7 @@ _AUDITED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # (uploads, search, wishlist, analytics reads, /admins is already super-only…).
 _SECTION_WRITE = {
     "products": {"products"},
-    "product-lines": {"products"},
     "brands": {"products"},
-    "certifications": {"products"},
-    "countries": {"products"},
     "categories": {"categories"},
     "combos": {"combos"},
     "waitlist": {"waitlist"},
@@ -197,11 +191,8 @@ app.include_router(brands.router)
 app.include_router(categories.router)
 app.include_router(combos.router)
 app.include_router(coupons.router)
-app.include_router(certifications.router)
-app.include_router(countries.router)
 app.include_router(orders.router)
 app.include_router(products.router)
-app.include_router(product_lines.router)
 app.include_router(recommendations.router)
 app.include_router(wishlist.router)
 app.include_router(reviews.router)
@@ -211,7 +202,6 @@ app.include_router(settings_router.router)
 app.include_router(users.router)
 app.include_router(upload.router)
 app.include_router(search.router)
-app.include_router(recommendations.router)
 app.include_router(home_sections.router)
 app.include_router(chat.router)
 app.include_router(site_media.router)

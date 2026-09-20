@@ -23,29 +23,6 @@ def _parse_dt(value: str | None):
         return None
 
 
-def cod_availability(settings: Settings, user: dict | None = None) -> dict:
-    """Whether Cash on Delivery can be used right now for this user.
-
-    Combines the three admin controls: the global switch, an optional
-    scheduled pause window, and a per-user block. Returns
-    {available: bool, reason: str} — `reason` is customer-facing.
-    """
-    cod = settings.cod
-    if not cod.enabled:
-        return {"available": False, "reason": "Cash on Delivery is currently unavailable."}
-
-    now = datetime.now()
-    frm, until = _parse_dt(cod.disabled_from), _parse_dt(cod.disabled_until)
-    paused = (frm or until) and (frm is None or now >= frm) and (until is None or now <= until)
-    if paused:
-        return {"available": False, "reason": "Cash on Delivery is temporarily paused. Please pay online."}
-
-    if user and user.get("cod_blocked"):
-        return {"available": False, "reason": "Cash on Delivery isn't available for your account."}
-
-    return {"available": True, "reason": ""}
-
-
 async def save_settings(db, settings: Settings) -> Settings:
     await db.settings.update_one(_KEY, {"$set": settings.model_dump()}, upsert=True)
     return settings
@@ -97,41 +74,39 @@ def product_final_price(product: dict) -> dict:
     return {"final_price": final, "struck_price": struck, "off_pct": off}
 
 
-def _variant_params(product: dict, color=None) -> tuple:
-    """Resolve (price, mrp, discount_pct, discount_on) for a colour.
-    Fallback order for every field: colour -> product base."""
+def _variant_params(product: dict, size_name=None) -> tuple:
+    """Resolve (price, mrp, discount_pct, discount_on) for a size variant.
+    Fallback order for every field: size variant -> product base."""
     price = product.get("price") or 0
     mrp = product.get("mrp") or 0
     disc = product.get("discount_pct") or 0
     on = product.get("discount_on") or "price"
-    for c in (product.get("colors") or []):
-        if isinstance(c, dict) and c.get("name") == color:
-            if c.get("price") is not None:
-                price = c["price"]
-            if c.get("mrp") is not None:
-                mrp = c["mrp"]
-            if c.get("discount_pct") is not None:
-                disc = c["discount_pct"]
-            if c.get("discount_on"):
-                on = c["discount_on"]
+    for s in (product.get("sizes") or []):
+        if isinstance(s, dict) and s.get("name") == size_name:
+            if s.get("price") is not None:
+                price = s["price"]
+            if s.get("mrp") is not None:
+                mrp = s["mrp"]
+            if s.get("discount_pct") is not None:
+                disc = s["discount_pct"]
             break
     return price, mrp, disc, on
 
 
-def resolve_price(product: dict, color=None) -> dict:
-    """Display pricing for a specific colour selection."""
-    price, mrp, disc, on = _variant_params(product, color)
+def resolve_price(product: dict, size_name=None) -> dict:
+    """Display pricing for a specific size variant selection."""
+    price, mrp, disc, on = _variant_params(product, size_name)
     final, struck, off = _apply(mrp, price, disc, on)
     return {"final_price": final, "struck_price": struck, "off_pct": off}
 
 
 def _combos(product: dict) -> list[tuple]:
-    """(final, struck, off) for every colour."""
+    """(final, struck, off) for every size variant."""
     out = []
-    colors = [c for c in (product.get("colors") or []) if isinstance(c, dict)]
-    if colors:
-        for c in colors:
-            p, m, d, o = _variant_params(product, c.get("name"))
+    sizes = [s for s in (product.get("sizes") or []) if isinstance(s, dict)]
+    if sizes:
+        for s in sizes:
+            p, m, d, o = _variant_params(product, s.get("name"))
             out.append(_apply(m, p, d, o))
     else:
         p, m, d, o = _variant_params(product, None)
@@ -156,17 +131,17 @@ def price_span(product: dict) -> dict:
     }
 
 
-def variant_stock(product: dict, color=None) -> int:
-    for c in (product.get("colors") or []):
-        if isinstance(c, dict) and c.get("name") == color:
-            return int(c.get("stock", 0))
+def variant_stock(product: dict, size_name=None) -> int:
+    for s in (product.get("sizes") or []):
+        if isinstance(s, dict) and s.get("name") == size_name:
+            return int(s.get("stock", 0))
     return int(product.get("stock", 0))
 
 
 def total_stock(product: dict) -> int:
-    colors = [c for c in (product.get("colors") or []) if isinstance(c, dict)]
-    if colors:
-        return sum(int(c.get("stock", 0)) for c in colors)
+    sizes = [s for s in (product.get("sizes") or []) if isinstance(s, dict)]
+    if sizes:
+        return sum(int(s.get("stock", 0)) for s in sizes)
     return int(product.get("stock", 0))
 
 

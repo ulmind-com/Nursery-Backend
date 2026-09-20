@@ -4,6 +4,9 @@ When the chat is opened for a specific order, the agent can actually act on the
 customer's behalf — cancel the order or file a return/exchange — via tool calls,
 scoped to that one order. Otherwise it answers questions grounded in store
 policy and the customer's recent orders.
+
+This is a plant nursery assistant — it can also help with plant care questions,
+watering schedules, sunlight requirements, and general gardening advice.
 """
 import asyncio
 import json
@@ -20,10 +23,10 @@ _GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 # General quick questions (no order in context).
 SUGGESTIONS = [
     "Where's my order?",
-    "Payment methods",
+    "Plant care tips",
     "Delivery charges",
     "Offers & coupons",
-    "How do returns work?",
+    "30-day plant guarantee",
     "Talk to a human",
 ]
 
@@ -67,18 +70,20 @@ async def _system_prompt(db, user: dict, order_id: str | None) -> str:
     human = " or ".join(contact) if contact else "our support line"
 
     lines = [
-        "You are 'Cleo', the customer-support assistant for Royaall Wool (a premium yarn and knitting supplies e-commerce app).",
-        "Help with orders, tracking, cancellations, returns/refunds, delivery, payments and offers. Be concise, warm and clear (2-5 sentences).",
-        f"Currency: {s.currency}. Payments: Cash on Delivery, or online UPI/Card/Netbanking (Razorpay).",
+        f"You are 'Sage 🌿', the customer-support and plant care assistant for {s.shop.name} (a premium online plant nursery).",
+        "Help with orders, tracking, cancellations, returns/refunds, delivery, payments, offers, AND plant care advice (watering, sunlight, repotting, pest control, fertilizing, etc). Be concise, warm and clear (2-5 sentences).",
+        f"Currency: {s.currency}. Payments: online UPI/Card/Netbanking (Razorpay).",
+        f"Plant guarantee: {s.plant_guarantee.days}-day plant guarantee — if the plant doesn't survive, we replace it free.",
         f"To reach a human, tell the customer to {human}.",
         "You can perform actions with the provided tools ONLY when the customer clearly confirms. For a return, ask whether they want a refund or an exchange and a short reason before calling the tool. Never claim you did something unless the tool succeeded.",
+        "For plant care questions, provide practical, specific advice based on the plant type. Mention sunlight, watering frequency, soil type, and common issues.",
     ]
 
     order = await _order(db, user, order_id)
     if order:
         oid = str(order["_id"])[-6:].upper()
         items = ", ".join(
-            f"{it.get('title')} (x{it.get('qty')}{', ' + it['size'] if it.get('size') else ''})"
+            f"{it.get('title')} (x{it.get('qty')}{', ' + it['size_variant'] if it.get('size_variant') else ''})"
             for it in (order.get("items") or [])
         )
         lines.append(f"CURRENT ORDER #{oid}: status={order.get('status')}, total={s.currency}{order.get('amount')}, payment={'online' if order.get('payment_method') == 'online' else 'COD'}. Items: {items}. Focus on THIS order.")
@@ -87,7 +92,6 @@ async def _system_prompt(db, user: dict, order_id: str | None) -> str:
         if docs:
             lines.append("Recent orders: " + "; ".join(f"#{str(d['_id'])[-6:].upper()} ({d.get('status')})" for d in docs))
     return "\n".join(lines)
-
 
 
 
@@ -127,7 +131,7 @@ async def reply(db, user: dict, history: list[dict], order_id: str | None = None
         if content:
             messages.append({"role": role, "content": content})
     if len(messages) == 1:
-        return "Hi! I'm Cleo 👋 How can I help you today?"
+        return "Hi! I'm Sage 🌿 Your plant care & support assistant. How can I help you today?"
 
     tools = await _tools_for(db, user, order_id)
 

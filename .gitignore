@@ -1,16 +1,37 @@
 # Python
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+eggs/
+
+# Virtual environment
 .venv/
 venv/
-*.egg-info/
+env/
 
-# Secrets — NEVER commit
+# Environment variables
 .env
-*firebase-adminsdk*.json
-serviceAccountKey.json
 
-# OS / editor
-.DS_Store
-.vscode/
+# IDE
 .idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# UV
+uv.lock
+
+# Misc
+*.log
+.pytest_cache/
+htmlcov/
+.coverage

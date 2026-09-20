@@ -42,15 +42,20 @@ def _cache_set(key: str, ids: list[str]) -> None:
 
 def _slim(p: dict) -> dict:
     """Compact candidate representation for the prompt (small token budget)."""
+    spec = p.get("plant_spec") or {}
     return {
         "id": p["id"],
         "title": p.get("title"),
-        "brand": p.get("brand") or "",
         "category": p.get("category_name") or "",
         "price": p.get("final_price") or p.get("price") or 0,
         "discount_pct": p.get("off_pct") or 0,
         "rating": p.get("rating") or 0,
         "in_stock": bool(p.get("in_stock", True)),
+        "plant_type": spec.get("plant_type") or "",
+        "sunlight": spec.get("sunlight") or "",
+        "difficulty": spec.get("difficulty_level") or "",
+        "pet_safe": spec.get("pet_safe", False),
+        "air_purifying": spec.get("air_purifying", False),
     }
 
 
@@ -84,10 +89,12 @@ async def rerank(
 
     valid = {c["id"] for c in candidates}
     system = (
-        "You are the recommendation engine for a premium yarn & knitting supplies e-commerce app (Royaall Wool). "
-        "Given a shopper's context and a list of candidate products, rank the products "
+        "You are the recommendation engine for a premium online plant nursery e-commerce app. "
+        "Given a shopper's context and a list of candidate plants/products, rank them "
         "by how relevant they are to the shopper, most relevant first. Prefer in-stock "
-        "items, complementary categories, similar style/price, and popular picks. "
+        "items, complementary plants (e.g. pair indoor plants together, suggest pots with plants), "
+        "similar care requirements, similar price range, and popular/bestselling picks. "
+        "For plant care compatibility, consider sunlight needs, watering frequency, and difficulty level. "
         "Only use ids from the candidates — never invent ids. "
         'Respond ONLY as compact JSON: {"ranking": ["<id>", ...]}.'
     )

@@ -38,8 +38,20 @@ async def _ensure_indexes() -> None:
     await db.categories.create_index("slug", unique=True)
     await db.categories.create_index("parent_id")
     await db.brands.create_index("slug", unique=True)
-    await db.products.create_index([("title", "text"), ("description", "text")])
+    # Full-text search on product title, description, and scientific name
+    await db.products.create_index([
+        ("title", "text"),
+        ("description", "text"),
+        ("plant_spec.scientific_name", "text"),
+    ])
     await db.products.create_index("category_id")
+    await db.products.create_index("plant_spec.plant_type")
+    await db.products.create_index("plant_spec.sunlight")
+    await db.products.create_index("plant_spec.difficulty_level")
+    await db.products.create_index("plant_spec.pet_safe")
+    await db.products.create_index("plant_spec.air_purifying")
+    await db.products.create_index("is_bestseller")
+    await db.products.create_index("is_new_arrival")
     await db.orders.create_index("user_id")
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
     await db.scheduled_notifications.create_index([("status", 1), ("due_at", 1)])

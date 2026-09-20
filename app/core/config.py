@@ -4,11 +4,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    APP_NAME: str = "Royal Wool"
+    APP_NAME: str = "Plant Nursery"
     ENV: str = "development"
 
     MONGO_URI: str = "mongodb://localhost:27017"
-    MONGO_DB: str = "clothing_ecommerce"
+    MONGO_DB: str = "nursery_ecommerce"
 
     JWT_SECRET: str = "change-me"
     JWT_ALGORITHM: str = "HS256"
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     FIREBASE_CREDENTIALS: str = ""
     # Public Firebase project id — lets /auth/firebase verify web sign-in ID
     # tokens via Google's public certs when FIREBASE_CREDENTIALS is unset.
-    FIREBASE_PROJECT_ID: str = "royal-wool"
+    FIREBASE_PROJECT_ID: str = "plant-nursery"
 
     # Google OAuth: the Web client ID (aud) the mobile ID token is verified
     # against. Same value the app passes as webClientId to Google Sign-In.
@@ -44,8 +44,8 @@ class Settings(BaseSettings):
     # Transactional email (Resend) — used for the signup OTP. Client swaps
     # these later; leaving RESEND_API_KEY empty just logs the code (dev).
     RESEND_API_KEY: str = ""
-    MAIL_ADDRESS: str = "noreply@royaallwool.com"
-    MAIL_FROM_NAME: str = "Royaall Wool"
+    MAIL_ADDRESS: str = "noreply@plantnursery.com"
+    MAIL_FROM_NAME: str = "Plant Nursery"
     OTP_TTL_MINUTES: int = 10           # how long a code stays valid
     OTP_RESEND_COOLDOWN_SECONDS: int = 60  # min gap between resends
     OTP_MAX_ATTEMPTS: int = 5           # wrong tries before a code is burned
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
 
     # Public base URL of this backend — used to build absolute URLs for push
     # notification images (FCM needs a reachable URL, not a local asset).
-    PUBLIC_BASE_URL: str = "https://royal-wool-backend.onrender.com"
+    PUBLIC_BASE_URL: str = "https://nursery-backend.onrender.com"
 
     # AI recommendations (Groq — OpenAI-compatible). Empty key => heuristic only.
     GROQ_API_KEY: str = ""
