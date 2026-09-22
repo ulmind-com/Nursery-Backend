@@ -24,61 +24,64 @@ from app.services.pricing import (
 router = APIRouter(prefix="/orders", tags=["orders"])
 
 
-def _resolve_item_image(prod: dict, color_name: str | None) -> str | None:
-    """Return the best image for a specific colour variant at order-creation
-    time. Tries an exact/prefix colour match first (see
-    `_matched_colour_image` — this also protects a checkout whose cart was
-    added to before the admin renamed a colour), falling back to the
-    product's default hero image when no colour was selected or none of
-    today's colours can confidently be matched to it.
+def _resolve_item_image(prod: dict, size_name: str | None) -> str | None:
+    """Return the best image for a specific size variant at order-creation
+    time. Tries an exact/prefix variant match first (see
+    `_matched_variant_image` — this also protects a checkout whose cart was
+    added to before the admin renamed a variant), falling back to the
+    product's default hero image when no variant was selected or none of
+    today's variants can confidently be matched to it.
     """
-    matched = _matched_colour_image(prod, color_name)
+    matched = _matched_variant_image(prod, size_name)
     if matched:
         return matched
     return (prod.get("images") or [None])[0]
 
 
-def _matched_colour_image(prod: dict, color_name: str | None) -> str | None:
-    """Only returns an image when `color_name` matches a colour on `prod`
-    and that colour now has a photo of its own. Tries an exact name match
+def _matched_variant_image(prod: dict, size_name: str | None) -> str | None:
+    """Only returns an image when `size_name` matches a size variant on `prod`
+    and that variant now has a photo of its own. Tries an exact name match
     first, then — only when that fails — a prefix match (case/space
-    insensitive), because the admin has been known to rename a colour after
-    orders were placed against it (e.g. "Azure Blue" -> "Azure Blue
-    ShadeOLV033"), which breaks an exact match for no reason a customer
-    would understand. The prefix match is only trusted when it identifies
-    exactly one colour; if the old name could plausibly mean more than one
-    of today's colours, this returns None rather than guess.
+    insensitive), because the admin has been known to rename a variant after
+    orders were placed against it (e.g. "Medium" -> "Medium (6 inch)"), which
+    breaks an exact match for no reason a customer would understand. The
+    prefix match is only trusted when it identifies exactly one variant; if
+    the old name could plausibly mean more than one of today's variants, this
+    returns None rather than guess.
 
     Never falls back to the product's generic image — this is used to
     retroactively refresh what an already-placed order displays, so it must
     never downgrade a stored image that may already be correct.
     """
-    if not color_name:
+    if not size_name:
         return None
-    colours = [c for c in (prod.get("colors") or []) if isinstance(c, dict)]
+    sizes = [s for s in (prod.get("sizes") or []) if isinstance(s, dict)]
 
-    def _image_of(c: dict) -> str | None:
-        if c.get("images"):
-            return c["images"][0]
-        if c.get("swatch_image"):
-            return c["swatch_image"]
-        return None
+    def _image_of(s: dict) -> str | None:
+        images = s.get("images") or []
+        return images[0] if images else None
 
-    for c in colours:
-        if c.get("name") == color_name:
-            return _image_of(c)
+    for s in sizes:
+        if s.get("name") == size_name:
+            return _image_of(s)
 
-    needle = color_name.strip().lower()
+    needle = size_name.strip().lower()
     if not needle:
         return None
-    candidates = [c for c in colours if (c.get("name") or "").strip().lower().startswith(needle)]
+    candidates = [s for s in sizes if (s.get("name") or "").strip().lower().startswith(needle)]
     if len(candidates) == 1:
         return _image_of(candidates[0])
     return None
 
 
+def _item_variant(item: dict) -> str | None:
+    """Size variant of a stored order item. Orders written before the nursery
+    migration keep the old wool-era `color` key, so read both."""
+    return item.get("size_variant") or item.get("color")
+
+
 def _refresh_item_images(cache: dict, items: list[dict] | None) -> None:
-    """Point each order item's image at its colour's CURRENT photo when one
+    """Point each order item's image at its variant's CURRENT photo when one
     now exists. Only mutates the in-memory dict being sent in a response or
     rendered into a PDF/email — the stored order document is never written
     back, so this is safe to call on every read.
@@ -87,7 +90,7 @@ def _refresh_item_images(cache: dict, items: list[dict] | None) -> None:
         prod = cache.get(it.get("product_id"))
         if not prod:
             continue
-        fresh = _matched_colour_image(prod, it.get("color"))
+        fresh = _matched_variant_image(prod, _item_variant(it))
         if fresh:
             it["image"] = fresh
 
@@ -125,28 +128,20 @@ STATUS_MSG = {
 }
 
 
-def _combo_matches(combo: dict, product_id: str, color_name: str | None, skein_weight) -> bool:
+def _combo_matches(combo: dict, product_id: str, size_name: str | None) -> bool:
     """Whether one cart line qualifies for this combo.
 
     `combo["product_ids"]` entries mean one of two things:
-    - a bare product id -> any shade of that product is eligible (this is
-      the original, and still fully supported, meaning — nothing that
-      already relies on it changes).
-    - `"<product_id>::<color_name>"` -> only that exact shade is eligible
-      (admin picked specific colour variants, e.g. specific shades of a
-      product that has many).
-    Falls back to the weight-based auto-match mode when neither matches.
+    - a bare product id -> any size variant of that product is eligible (this
+      is the original, and still fully supported, meaning).
+    - `"<product_id>::<size_name>"` -> only that exact size variant is
+      eligible (admin picked specific variants, e.g. only the Large pot).
     """
     ids = combo.get("product_ids") or []
     if str(product_id) in ids:
         return True
-    if color_name and f"{product_id}::{color_name}" in ids:
+    if size_name and f"{product_id}::{size_name}" in ids:
         return True
-    if combo.get("weight_target") is not None and skein_weight is not None:
-        try:
-            return float(skein_weight) == float(combo["weight_target"])
-        except (ValueError, TypeError):
-            return False
     return False
 
 
@@ -166,15 +161,15 @@ async def _build_bill(db, items_in, address, coupon, user_id=None):
         # function backs both the /orders/quote preview and actual order
         # creation, and create_order runs before the Razorpay checkout modal
         # ever opens, so an oversell attempt is rejected up front.
-        available = variant_stock(prod, it.color)
+        available = variant_stock(prod, it.size_variant)
         if it.qty > available:
-            label = prod.get("title", "").strip() + (f" ({it.color})" if it.color else "")
+            label = prod.get("title", "").strip() + (f" ({it.size_variant})" if it.size_variant else "")
             raise HTTPException(
                 status_code=400,
                 detail=f"Only {available} left of \"{label}\" — please lower the quantity.",
             )
-        # Price for the exact colour the customer chose (variant-aware).
-        unit = resolve_price(prod, it.color)["final_price"]
+        # Price for the exact size variant the customer chose.
+        unit = resolve_price(prod, it.size_variant)["final_price"]
         line_total = unit * it.qty
         subtotal += line_total
         total_weight_grams += float(prod.get("shipping_weight") or 0) * it.qty
@@ -224,9 +219,7 @@ async def _build_bill(db, items_in, address, coupon, user_id=None):
 
         available_units = []
         for state in cart_state:
-            is_eligible = _combo_matches(
-                combo, state["product_id"], state["it"].color, state["prod"].get("skein_weight")
-            )
+            is_eligible = _combo_matches(combo, state["product_id"], state["it"].size_variant)
             if is_eligible and state["unbundled_qty"] > 0:
                 available_units.extend([(state["unit"], state)] * state["unbundled_qty"])
                     
@@ -246,9 +239,7 @@ async def _build_bill(db, items_in, address, coupon, user_id=None):
                 sorted_state = sorted(cart_state, key=lambda x: x["unit"], reverse=True)
                 units_to_remove = items_to_bundle
                 for state in sorted_state:
-                    is_eligible = _combo_matches(
-                        combo, state["product_id"], state["it"].color, state["prod"].get("skein_weight")
-                    )
+                    is_eligible = _combo_matches(combo, state["product_id"], state["it"].size_variant)
                     if is_eligible:
                         take = min(state["unbundled_qty"], units_to_remove)
                         state["unbundled_qty"] -= take
@@ -264,12 +255,12 @@ async def _build_bill(db, items_in, address, coupon, user_id=None):
                 "title": state["prod"]["title"],
                 "price": state["unit"],
                 "qty": state["it"].qty,
-                "color": state["it"].color,
-                "size": state["it"].size,
+                "size_variant": state["it"].size_variant,
+                "pot_type": state["it"].pot_type,
                 "cgst": state["comp"]["cgst"],
                 "sgst": state["comp"]["sgst"],
                 "igst": state["comp"]["igst"],
-                "image": _resolve_item_image(state["prod"], state["it"].color),
+                "image": _resolve_item_image(state["prod"], state["it"].size_variant),
             }
         )
 
@@ -329,6 +320,15 @@ async def _build_bill(db, items_in, address, coupon, user_id=None):
 
     total = round((subtotal - discount) + deliv["fee"] + total_tax, 2)
 
+    # Cash on delivery is offered per order, not per account: it needs a
+    # deliverable address and a total the courier is allowed to carry.
+    cod = settings.cod
+    cod_available = bool(
+        cod.enabled
+        and deliv["deliverable"]
+        and (not cod.max_order or total <= cod.max_order)
+    )
+
     bill = {
         "subtotal": round(subtotal, 2),
         "discount": discount,
@@ -343,6 +343,14 @@ async def _build_bill(db, items_in, address, coupon, user_id=None):
         "currency": settings.currency,          # display symbol (₹)
         "currency_code": settings.currency_code,  # ISO code for Razorpay (INR)
         "coupon_applied": discount > 0,
+        "cod_available": cod_available,
+        # One line the checkout can show under "Shipping method" once the
+        # address is known, instead of the "enter your address" placeholder.
+        "message": (
+            "Free delivery · dispatched within 24 hours"
+            if deliv["free"]
+            else f"Standard delivery · {settings.currency}{deliv['fee']:.0f}"
+        ),
     }
     return order_items, bill
 
@@ -354,81 +362,18 @@ async def quote(body: OrderCreate, user: dict = Depends(get_current_user)):
     _, bill = await _build_bill(db, body.items, body.address, body.coupon_code, user["id"])
     return bill
 
-@router.post("/quote-debug")
-async def quote_debug(body: OrderCreate):
-    db = get_db()
-    cart_state = []
-    trace = []
-    subtotal = 0.0
-    for it in body.items:
-        prod = await db.products.find_one({"_id": to_object_id(it.product_id)})
-        unit = resolve_price(prod, it.color)["final_price"]
-        cart_state.append({
-            "product_id": it.product_id,
-            "unit": unit,
-            "qty": it.qty,
-            "it": it,
-            "prod": prod,
-            "unbundled_qty": it.qty
-        })
-        subtotal += unit * it.qty
-
-    now = datetime.now(timezone.utc)
-    combos = await db.combos.find({"active": True}).to_list(100)
-    trace.append(f"Found {len(combos)} combos")
-    for combo in combos:
-        start_date = combo.get("start_date")
-        if start_date and start_date.tzinfo is None:
-            start_date = start_date.replace(tzinfo=timezone.utc)
-        if start_date and now < start_date:
-            trace.append(f"Combo {combo.get('name')} skipped (starts in future: {start_date} vs {now})")
-            continue
-        
-        end_date = combo.get("end_date")
-        if end_date and end_date.tzinfo is None:
-            end_date = end_date.replace(tzinfo=timezone.utc)
-        if end_date and now > end_date:
-            trace.append(f"Combo {combo.get('name')} skipped (ended in past)")
-            continue
-
-        available_units = []
-        for state in cart_state:
-            is_eligible = _combo_matches(
-                combo, state["product_id"], state["it"].color, state["prod"].get("skein_weight")
-            )
-            trace.append(f"Checking item {state['product_id']} color {state['it'].color}: eligible={is_eligible}")
-            if is_eligible and state["unbundled_qty"] > 0:
-                available_units.extend([(state["unit"], state)] * state["unbundled_qty"])
-
-        available_units.sort(key=lambda x: x[0], reverse=True)
-        num_bundles = len(available_units) // combo.get("qty", 1)
-        trace.append(f"Num bundles for {combo.get('name')}: {num_bundles} (avail={len(available_units)}, qty={combo.get('qty', 1)})")
-        if num_bundles > 0:
-            items_to_bundle = num_bundles * combo["qty"]
-            regular = sum(u[0] for u in available_units[:items_to_bundle])
-            bundle_price = num_bundles * combo["price"]
-            disc = regular - bundle_price
-            trace.append(f"Discount: {disc}")
-    return {"trace": trace}
-
-
 async def _decrement_stock(db, order_items):
     for it in order_items:
         prod = await db.products.find_one({"_id": to_object_id(it["product_id"])})
         if not prod:
             continue
-        colors = prod.get("colors") or []
-        if colors and it.get("color"):
-            for c in colors:
-                if c.get("name") == it["color"]:
-                    sizes = c.get("sizes") or []
-                    if sizes and it.get("size"):
-                        for ss in sizes:
-                            if ss.get("size") == it["size"]:
-                                ss["stock"] = max(0, int(ss.get("stock", 0)) - it["qty"])
-                    else:
-                        c["stock"] = max(0, int(c.get("stock", 0)) - it["qty"])
-            await db.products.update_one({"_id": prod["_id"]}, {"$set": {"colors": colors}})
+        variant = _item_variant(it)
+        sizes = [sz for sz in (prod.get("sizes") or []) if isinstance(sz, dict)]
+        if sizes and variant and any(sz.get("name") == variant for sz in sizes):
+            for sz in sizes:
+                if sz.get("name") == variant:
+                    sz["stock"] = max(0, int(sz.get("stock", 0)) - it["qty"])
+            await db.products.update_one({"_id": prod["_id"]}, {"$set": {"sizes": sizes}})
         else:
             await db.products.update_one({"_id": prod["_id"]}, {"$inc": {"stock": -it["qty"]}})
 
@@ -439,18 +384,13 @@ async def _restore_stock(db, order_items):
         prod = await db.products.find_one({"_id": to_object_id(it["product_id"])})
         if not prod:
             continue
-        colors = prod.get("colors") or []
-        if colors and it.get("color"):
-            for c in colors:
-                if c.get("name") == it["color"]:
-                    sizes = c.get("sizes") or []
-                    if sizes and it.get("size"):
-                        for ss in sizes:
-                            if ss.get("size") == it["size"]:
-                                ss["stock"] = int(ss.get("stock", 0)) + it["qty"]
-                    else:
-                        c["stock"] = int(c.get("stock", 0)) + it["qty"]
-            await db.products.update_one({"_id": prod["_id"]}, {"$set": {"colors": colors}})
+        variant = _item_variant(it)
+        sizes = [sz for sz in (prod.get("sizes") or []) if isinstance(sz, dict)]
+        if sizes and variant and any(sz.get("name") == variant for sz in sizes):
+            for sz in sizes:
+                if sz.get("name") == variant:
+                    sz["stock"] = int(sz.get("stock", 0)) + it["qty"]
+            await db.products.update_one({"_id": prod["_id"]}, {"$set": {"sizes": sizes}})
         else:
             await db.products.update_one({"_id": prod["_id"]}, {"$inc": {"stock": it["qty"]}})
 
@@ -464,36 +404,90 @@ async def create_order(body: OrderCreate, user: dict = Depends(get_current_user)
     if bill["subtotal"] <= 0:
         raise HTTPException(status_code=400, detail="Empty order")
 
+    method = "cod" if body.payment_method == "cod" else "online"
+    if method == "cod" and not bill["cod_available"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Cash on delivery isn't available for this order — please pay online.",
+        )
+
+    now = datetime.now(timezone.utc)
     doc = {
         "user_id": user["id"],
         "items": order_items,
         "address": body.address.model_dump(),
-        "payment_method": "online",
+        "payment_method": method,
         "coupon_code": body.coupon_code,
+        "is_gift": body.is_gift,
+        "gift_note": body.gift_note,
         **bill,
         "amount": bill["total"],
         "status": "pending_payment",
         "razorpay_order_id": None,
         "razorpay_payment_id": None,
-        "created_at": datetime.now(timezone.utc),
+        "created_at": now,
     }
     res = await db.orders.insert_one(doc)
     our_id = str(res.inserted_id)
 
-    try:
-        rp = razorpay_service.create_order(
-            round(bill["total"] * 100), receipt=our_id, currency=bill.get("currency_code", "INR")
+    # ── Cash on delivery: nothing to collect now, so the order is live the
+    # moment it is placed (same side effects the paid path runs on capture).
+    if method == "cod":
+        placed = await db.orders.find_one_and_update(
+            {"_id": res.inserted_id},
+            {"$set": {"status": "placed", "placed_at": now}},
+            return_document=True,
         )
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        await _decrement_stock(db, placed["items"])
+        if placed.get("coupon_code"):
+            await db.coupons.update_one(
+                {"code": placed["coupon_code"].strip().upper()}, {"$inc": {"used_count": 1}}
+            )
+        await _send_invoice_email_safely(db, placed)
+        return {
+            "id": our_id,
+            "order_id": our_id,
+            "payment_method": "cod",
+            "status": "placed",
+            "bill": bill,
+            **{k: bill[k] for k in ("subtotal", "discount", "delivery", "tax", "total")},
+        }
+
+    # ── Online: open a Razorpay order the checkout modal can be handed.
+    amount_paise = int(round(bill["total"] * 100))
+    currency_code = bill.get("currency_code") or "INR"
+    try:
+        rp = razorpay_service.create_order(amount_paise, receipt=our_id, currency=currency_code)
+    except Exception as e:
+        # Never leave a payable order dangling in pending_payment when the
+        # gateway never even saw it — that is exactly what shows up later as
+        # a ghost order in the admin panel.
+        await db.orders.update_one(
+            {"_id": res.inserted_id},
+            {"$set": {"status": "cancelled", "cancelled_at": datetime.now(timezone.utc)}},
+        )
+        detail = (
+            "Online payment isn't configured for this store yet."
+            if isinstance(e, RuntimeError)
+            else f"Could not start the payment: {e}"
+        )
+        raise HTTPException(status_code=503 if isinstance(e, RuntimeError) else 502, detail=detail)
+
     await db.orders.update_one({"_id": res.inserted_id}, {"$set": {"razorpay_order_id": rp["id"]}})
 
     return {
+        # `id` / `razorpay_amount` / `razorpay_currency` are what the storefront
+        # checkout reads before it opens the Razorpay modal; the flatter
+        # `order_id` / `amount` / `currency` keys are kept for older clients.
+        "id": our_id,
         "order_id": our_id,
         "payment_method": "online",
+        "status": "pending_payment",
         "razorpay_order_id": rp["id"],
-        "amount": round(bill["total"] * 100),
-        "currency": bill.get("currency_code", "INR"),  # ISO code for Razorpay
+        "razorpay_amount": amount_paise,
+        "razorpay_currency": currency_code,
+        "amount": amount_paise,
+        "currency": currency_code,
         "key_id": app_settings.RAZORPAY_KEY_ID,
         "bill": bill,
         "prefill": {
@@ -589,7 +583,7 @@ async def verify_order(body: OrderVerify, user: dict = Depends(get_current_user)
     # updated is None when the webhook (or a retry of this same call) already
     # confirmed this order — still a success from the customer's perspective.
 
-    return {"status": "confirmed", "order_id": body.order_id}
+    return {"id": body.order_id, "order_id": body.order_id, "status": "confirmed"}
 
 
 @router.post("/webhook/razorpay")
@@ -813,7 +807,7 @@ async def export_orders(
     items_ws = wb.create_sheet("Order Items")
     items_headers = [
         "Order ID", "Date Placed", "Customer Name", "Phone", "Delivery Address",
-        "Product ID", "Product Title", "Shade / Colour", "Size", "Qty",
+        "Product ID", "Product Title", "Size Variant", "Pot Type", "Qty",
         "Unit Price", "Line Total", "Image URL",
     ]
     items_ws.append(items_headers)
@@ -832,7 +826,8 @@ async def export_orders(
         )
         items = d.get("items") or []
         items_summary = "; ".join(
-            f"{it.get('qty', 0)}x {(it.get('title') or '').strip()}" + (f" ({it.get('color')})" if it.get("color") else "")
+            f"{it.get('qty', 0)}x {(it.get('title') or '').strip()}"
+            + (f" ({_item_variant(it)})" if _item_variant(it) else "")
             for it in items
         )
 
@@ -848,7 +843,7 @@ async def export_orders(
             items_ws.append([
                 oid, placed, name, phone, full_address,
                 str(it.get("product_id") or ""), (it.get("title") or "").strip(),
-                it.get("color") or "", it.get("size") or "",
+                _item_variant(it) or "", it.get("pot_type") or it.get("size") or "",
                 it.get("qty", 0), it.get("price", 0),
                 round((it.get("price") or 0) * (it.get("qty") or 0), 2),
                 it.get("image") or "",

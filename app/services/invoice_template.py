@@ -115,9 +115,9 @@ def render_pdf(order: dict) -> str:
         img_data = _get_image_b64(img_url) if img_url else ""
         img_cell = f'<img src="{img_data}" width="36" height="36" />' if img_data else ""
         title = it.get("title", "Product")
-        color = it.get("color", "")
-        size = it.get("size", "")
-        meta = " | ".join(p for p in [color, size] if p)
+        variant = it.get("size_variant") or it.get("color", "")
+        pot = it.get("pot_type") or it.get("size", "")
+        meta = " | ".join(p for p in [variant, pot] if p)
         qty = it.get("qty", 1)
         price = float(it.get("price", 0))
         line = price * qty

@@ -63,6 +63,15 @@ class PlantGuaranteeConfig(BaseModel):
     description: str = "If your plant doesn't survive within 30 days, we'll replace it free of charge."
 
 
+class CodConfig(BaseModel):
+    """Cash on delivery availability. `max_order` is the highest order total
+    we're willing to hand to a courier as cash (0 = no ceiling)."""
+    enabled: bool = True
+    max_order: float = 20000
+    label: str = "Cash on Delivery"
+    note: str = "Pay in cash when your plants are delivered."
+
+
 class Settings(BaseModel):
     currency: str = "₹"
     currency_code: str = "INR"
@@ -72,6 +81,7 @@ class Settings(BaseModel):
     delivery: DeliveryConfig = DeliveryConfig()
     support: SupportConfig = SupportConfig()
     plant_guarantee: PlantGuaranteeConfig = PlantGuaranteeConfig()
+    cod: CodConfig = CodConfig()
 
     announcements: list[str] = Field(default=[
         "🌿 Free shipping on orders above ₹499",
@@ -90,4 +100,5 @@ class SettingsUpdate(BaseModel):
     delivery: DeliveryConfig | None = None
     support: SupportConfig | None = None
     plant_guarantee: PlantGuaranteeConfig | None = None
+    cod: CodConfig | None = None
     announcements: list[str] | None = None
