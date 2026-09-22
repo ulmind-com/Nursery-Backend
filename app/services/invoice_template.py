@@ -1,4 +1,4 @@
-"""Premium HTML invoice renderer for Royaall Wool.
+"""Premium HTML invoice renderer for Plant Nursery.
 
 Two render functions:
   render_pdf(order)   → HTML optimised for xhtml2pdf (uses Rs. for the rupee sign)
@@ -107,8 +107,6 @@ def _extract(order: dict):
 def render_pdf(order: dict) -> str:
     d = _extract(order)
     fmt = _fmt_money_pdf
-    logo_data = _get_image_b64("https://royaallwool.com/logo.jpeg")
-
     item_rows = ""
     for idx, it in enumerate(d["items"]):
         img_url = it.get("image") or ""
@@ -174,11 +172,10 @@ def render_pdf(order: dict) -> str:
   <table width="100%" cellpadding="0" cellspacing="0">
     <tr>
       <td width="50%" style="vertical-align:middle;">
-        <img src="{logo_data}" width="40" height="40" style="vertical-align:middle;" />
-        <span style="font-size:20px;color:#800000;font-weight:bold;vertical-align:middle;padding-left:6px;">Royaall</span>
-        <span style="font-size:20px;color:#D4AF37;font-style:italic;vertical-align:middle;"> Wool</span>
+        <span style="font-size:22px;color:#0a5c3e;font-weight:bold;vertical-align:middle;">Plant</span>
+        <span style="font-size:22px;color:#008B5E;font-style:italic;vertical-align:middle;"> Nursery</span>
         <br/>
-        <span style="font-size:8px;color:#999;letter-spacing:2px;padding-left:48px;">PREMIUM YARN &amp; WOOL</span>
+        <span style="font-size:8px;color:#999;letter-spacing:2px;">FARM-FRESH PLANTS &amp; GARDEN ESSENTIALS</span>
       </td>
       <td width="50%" style="text-align:right;vertical-align:top;">
         <span style="font-size:26px;font-weight:bold;color:#2c2320;">INVOICE</span><br/>
@@ -245,9 +242,9 @@ def render_pdf(order: dict) -> str:
   <!-- FOOTER -->
   <table width="100%" cellpadding="0" cellspacing="0">
     <tr><td style="text-align:center;padding:2px 0;">
-      <p style="font-size:11px;color:#800000;font-style:italic;font-weight:bold;margin:0 0 4px;">Thank you for shopping with Royaall Wool!</p>
+      <p style="font-size:11px;color:#800000;font-style:italic;font-weight:bold;margin:0 0 4px;">Thank you for shopping with Plant Nursery!</p>
       <p style="font-size:8px;color:#bbb;margin:0 0 1px;">This is a computer generated invoice and does not require a signature.</p>
-      <p style="font-size:8px;color:#bbb;margin:0;">Royaall Wool &middot; Premium Yarn &amp; Wool Retailer &middot; www.royaallwool.com</p>
+      <p style="font-size:8px;color:#bbb;margin:0;">Plant Nursery &middot; Farm-Fresh Plants &amp; Garden Essentials</p>
     </td></tr>
   </table>
 
@@ -262,7 +259,6 @@ def render_pdf(order: dict) -> str:
 def render_email(order: dict) -> str:
     d = _extract(order)
     fmt = _fmt_money_email
-    logo_url = "https://royaallwool.com/logo.jpeg"
 
     item_rows = ""
     for idx, it in enumerate(d["items"]):
@@ -337,15 +333,11 @@ def render_email(order: dict) -> str:
             <td style="vertical-align:middle;">
               <table cellpadding="0" cellspacing="0"><tr>
                 <td style="vertical-align:middle;">
-                  <img src="{logo_url}" width="40" height="40"
-                       style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid #D4AF37;" />
-                </td>
-                <td style="padding-left:12px;vertical-align:middle;">
-                  <div style="font-size:20px;letter-spacing:-0.3px;">
-                    <span style="color:#ffffff;font-weight:700;">Royaall</span>
-                    <span style="color:#D4AF37;font-weight:500;font-style:italic;"> Wool</span>
+                  <div style="font-size:22px;letter-spacing:-0.3px;">
+                    <span style="color:#ffffff;font-weight:700;">Plant</span>
+                    <span style="color:#8fe3bf;font-weight:500;font-style:italic;"> Nursery</span>
                   </div>
-                  <div style="font-size:9px;color:#e8c9a0;margin-top:2px;letter-spacing:2px;">PREMIUM YARN &amp; WOOL</div>
+                  <div style="font-size:9px;color:#bfe8d4;margin-top:2px;letter-spacing:2px;">FARM-FRESH PLANTS &amp; GARDEN</div>
                 </td>
               </tr></table>
             </td>
@@ -465,8 +457,8 @@ def render_email(order: dict) -> str:
               <div style="font-size:11px;color:#b5b0a8;margin-top:2px;">and does not require a signature.</div>
             </td>
             <td style="vertical-align:top;text-align:right;">
-              <div style="font-size:11px;color:#8c8680;">Royaall Wool &middot; Premium Yarn &amp; Wool</div>
-              <div style="font-size:11px;color:#b5b0a8;margin-top:2px;">www.royaallwool.com</div>
+              <div style="font-size:11px;color:#8c8680;">Plant Nursery &middot; Farm-Fresh Plants &amp; Garden</div>
+              <div style="font-size:11px;color:#b5b0a8;margin-top:2px;">Plant Nursery</div>
             </td>
           </tr></table>
         </td></tr>
