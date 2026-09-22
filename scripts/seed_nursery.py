@@ -86,21 +86,23 @@ async def main():
         })
         print(f"Admin -> {ADMIN['email']} / {ADMIN['password']}")
 
-    async def cat(name, slug, icon, order):
+    async def cat(name, slug, icon, order, image):
         existing = await db.categories.find_one({"slug": slug})
         if existing:
+            await db.categories.update_one({"_id": existing["_id"]}, {"$set": {"image": image}})
             return str(existing["_id"])
         res = await db.categories.insert_one({
             "name": name, "slug": slug, "parent_id": None,
-            "description": f"{name} for your home & garden", "image": None,
+            "description": f"{name} for your home & garden", "image": image,
             "icon": icon, "order": order,
         })
         return str(res.inserted_id)
 
-    indoor = await cat("Indoor Plants", "indoor-plants", "🪴", 1)
-    air = await cat("Air Purifying", "air-purifying", "🌿", 2)
-    flowering = await cat("Flowering Plants", "flowering-plants", "🌸", 3)
-    low = await cat("Low Maintenance", "low-maintenance", "🌱", 4)
+    U = "https://images.unsplash.com/"
+    indoor = await cat("Indoor Plants", "indoor-plants", "🪴", 1, f"{U}photo-1485955900006-10f4d324d411?w=500")
+    air = await cat("Air Purifying", "air-purifying", "🌿", 2, f"{U}photo-1593482892290-f54927ae1bb6?w=500")
+    flowering = await cat("Flowering Plants", "flowering-plants", "🌸", 3, f"{U}photo-1509937528035-ad76254b0356?w=500")
+    low = await cat("Low Maintenance", "low-maintenance", "🌱", 4, f"{U}photo-1632207691143-643e2a9a9361?w=500")
 
     def sp(**kw):
         base = {"plant_type": "Indoor", "sunlight": "Bright Indirect",
