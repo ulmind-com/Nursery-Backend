@@ -61,13 +61,29 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# When credentials are allowed, the browser rejects a literal
+# "Access-Control-Allow-Origin: *" response — it must echo the caller's
+# exact origin. Starlette does that automatically for `allow_origin_regex`
+# but returns a bare "*" for `allow_origins=["*"]`, so a wildcard config is
+# translated into a match-all regex here. That mismatch was surfacing on the
+# storefront as "We couldn't reach the nursery service."
+_cors = settings.cors_list
+if "*" in _cors:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=".*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 import time
 import logging
