@@ -21,7 +21,7 @@ PHOTOS = {
     "peace": f"{IMG}photo-1593691509543-c55fb32d8de5?w=900",
     "snake": f"{IMG}photo-1593482892290-f54927ae1bb6?w=900",
     "areca": f"{IMG}photo-1545241047-6083a3684587?w=900",
-    "aloe": f"{IMG}photo-1509423350716-97f2360af2e4?w=900",
+    "aloe": f"{IMG}photo-1596547609652-9cf5d8d76921?w=900",
     "anthurium": f"{IMG}photo-1509937528035-ad76254b0356?w=900",
     "zz": f"{IMG}photo-1632207691143-643e2a9a9361?w=900",
 }
