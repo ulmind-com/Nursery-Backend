@@ -26,6 +26,7 @@ from app.routers import (
     search,
     settings as settings_router,
     site_media,
+    stores,
     upload,
     users,
     waitlist,
@@ -221,6 +222,7 @@ app.include_router(search.router)
 app.include_router(home_sections.router)
 app.include_router(chat.router)
 app.include_router(site_media.router)
+app.include_router(stores.router)
 app.include_router(waitlist.router)
 app.include_router(google_reviews.router)
 
