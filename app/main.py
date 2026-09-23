@@ -22,6 +22,7 @@ from app.routers import (
     google_reviews,
     home_sections,
     orders,
+    press,
     products,
     recommendations,
     reviews,
@@ -227,6 +228,7 @@ app.include_router(site_media.router)
 app.include_router(stores.router)
 app.include_router(garden_services.router)
 app.include_router(gifting.router)
+app.include_router(press.router)
 app.include_router(waitlist.router)
 app.include_router(google_reviews.router)
 
