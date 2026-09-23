@@ -18,7 +18,7 @@ class DeliveryConfig(BaseModel):
 
 
 class ShopConfig(BaseModel):
-    name: str = "Plant Nursery"
+    name: str = "MyGarden"
     address: str = ""
     phone: str = ""
     email: str = ""          # support email surfaced to customers (chat, help)
