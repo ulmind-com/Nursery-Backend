@@ -17,6 +17,7 @@ from app.routers import (
     chat,
     combos,
     coupons,
+    garden_services,
     google_reviews,
     home_sections,
     orders,
@@ -223,6 +224,7 @@ app.include_router(home_sections.router)
 app.include_router(chat.router)
 app.include_router(site_media.router)
 app.include_router(stores.router)
+app.include_router(garden_services.router)
 app.include_router(waitlist.router)
 app.include_router(google_reviews.router)
 
