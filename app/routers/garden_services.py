@@ -33,6 +33,7 @@ class SectionConfig(BaseModel):
     hero_subtitle: str = "for your garden & office space"
     hero_image: str = ""
     hero_cta_label: str = "Book service"
+    hero_overlay: bool = False   # on when the hero photo has no headline baked in
 
     # Services grid
     page_title: str = "Garden Services"
