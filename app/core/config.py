@@ -31,7 +31,9 @@ class Settings(BaseSettings):
     FIREBASE_CREDENTIALS: str = ""
     # Public Firebase project id — lets /auth/firebase verify web sign-in ID
     # tokens via Google's public certs when FIREBASE_CREDENTIALS is unset.
-    FIREBASE_PROJECT_ID: str = "plant-nursery"
+    # Must match the storefront's VITE_FIREBASE_PROJECT_ID — the ID token is
+    # issued for that project and is rejected if the two ever drift apart.
+    FIREBASE_PROJECT_ID: str = "mygurden"
 
     # Google OAuth: the Web client ID (aud) the mobile ID token is verified
     # against. Same value the app passes as webClientId to Google Sign-In.
