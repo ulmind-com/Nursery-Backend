@@ -22,6 +22,7 @@ from app.routers import (
     google_reviews,
     home_sections,
     orders,
+    page_sections,
     press,
     products,
     recommendations,
@@ -223,6 +224,7 @@ app.include_router(users.router)
 app.include_router(upload.router)
 app.include_router(search.router)
 app.include_router(home_sections.router)
+app.include_router(page_sections.router)
 app.include_router(chat.router)
 app.include_router(site_media.router)
 app.include_router(stores.router)

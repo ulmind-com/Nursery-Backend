@@ -60,7 +60,9 @@ class Settings(BaseSettings):
 
     # AI recommendations (Groq — OpenAI-compatible). Empty key => heuristic only.
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    # Groq retired the llama-3.x chat models; gpt-oss-120b is the current
+    # general model on that account and supports the agent's tool calls.
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
     GROQ_TIMEOUT: float = 8.0
     RECS_USE_LLM: bool = True
 

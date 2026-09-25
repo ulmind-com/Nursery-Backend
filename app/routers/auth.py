@@ -408,6 +408,35 @@ async def me(user: dict = Depends(get_current_user)):
     return _public(user)
 
 
+@router.post("/change-password")
+async def change_password(
+    current_password: str = Body(..., embed=True),
+    new_password: str = Body(..., embed=True, min_length=6, max_length=128),
+    user: dict = Depends(get_current_user),
+):
+    """Swap the password, proving the old one first.
+
+    Social sign-ups have no password stored yet; they are allowed to set one
+    without proving anything, since there is nothing to prove.
+    """
+    db = get_db()
+    doc = await db.users.find_one({"_id": to_object_id(user["id"])})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    stored = doc.get("password") or ""
+    if stored and not verify_password(current_password, stored):
+        raise HTTPException(status_code=400, detail="Your current password is incorrect")
+    if verify_password(new_password, stored) if stored else False:
+        raise HTTPException(status_code=400, detail="Pick a password you haven't used here before")
+
+    await db.users.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"password": hash_password(new_password), "password_changed_at": datetime.now(timezone.utc)}},
+    )
+    return {"ok": True, "had_password": bool(stored)}
+
+
 @router.patch("/me", response_model=UserPublic)
 async def update_me(body: ProfileUpdate, user: dict = Depends(get_current_user)):
     db = get_db()

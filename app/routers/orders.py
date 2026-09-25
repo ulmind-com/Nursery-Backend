@@ -983,6 +983,44 @@ async def get_order(order_id: str, user: dict = Depends(get_current_user)):
     return out
 
 
+# A customer may pull out while the order is still sitting with us. Once it has
+# shipped it is in a courier's hands, so cancelling becomes a return instead.
+CANCELLABLE = {"placed", "confirmed"}
+
+
+@router.post("/{order_id}/cancel")
+async def cancel_order(
+    order_id: str,
+    reason: str = Body("", embed=True),
+    user: dict = Depends(get_current_user),
+):
+    db = get_db()
+    doc = await db.orders.find_one({"_id": to_object_id(order_id)})
+    if not doc or doc["user_id"] != user["id"]:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    status = doc.get("status")
+    if status == "cancelled":
+        raise HTTPException(status_code=409, detail="This order is already cancelled")
+    if status not in CANCELLABLE:
+        raise HTTPException(
+            status_code=409,
+            detail="This order has already shipped — please request a return instead.",
+        )
+
+    await db.orders.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {
+            "status": "cancelled",
+            "cancelled_at": datetime.now(timezone.utc),
+            "cancelled_by": "customer",
+            "cancel_reason": reason.strip()[:300],
+        }},
+    )
+    fresh = await db.orders.find_one({"_id": doc["_id"]})
+    return serialize(fresh)
+
+
 @router.patch("/{order_id}/status", dependencies=[Depends(require_admin)])
 async def update_status(
     order_id: str, 

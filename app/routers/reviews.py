@@ -146,6 +146,92 @@ async def add_review(body: ReviewIn, user: dict = Depends(get_current_user)):
     return {"ok": True, **agg}
 
 
+class ReviewEdit(BaseModel):
+    rating: float | None = Field(default=None, ge=1, le=5)
+    title: str | None = None
+    text: str | None = None
+    photos: list[str] | None = None
+    tags: list[str] | None = None
+
+
+@router.get("/mine")
+async def my_reviews(user: dict = Depends(get_current_user)):
+    """Everything this customer has written, newest first, with the product
+    attached so the account screen can show what was reviewed."""
+    db = get_db()
+    docs = await db.reviews.find({"user_id": user["id"]}).sort("created_at", -1).to_list(length=200)
+
+    ids = []
+    for d in docs:
+        try:
+            ids.append(to_object_id(d["product_id"]))
+        except Exception:
+            continue
+    products = {}
+    if ids:
+        async for prod in db.products.find({"_id": {"$in": ids}}):
+            images = prod.get("images") or []
+            for size in prod.get("sizes") or []:
+                if isinstance(size, dict) and size.get("images"):
+                    images = size["images"]
+                    break
+            products[str(prod["_id"])] = {
+                "id": str(prod["_id"]),
+                "title": prod.get("title", ""),
+                "image": images[0] if images else None,
+            }
+
+    out = []
+    for d in docs:
+        item = serialize(d)
+        item["product"] = products.get(d["product_id"])
+        out.append(item)
+    return out
+
+
+async def _own_review(db, review_id: str, user: dict) -> dict:
+    doc = await db.reviews.find_one({"_id": to_object_id(review_id)})
+    if not doc or doc.get("user_id") != user["id"]:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return doc
+
+
+@router.patch("/{review_id}")
+async def edit_my_review(review_id: str, body: ReviewEdit, user: dict = Depends(get_current_user)):
+    db = get_db()
+    doc = await _own_review(db, review_id, user)
+
+    updates: dict = {}
+    if body.rating is not None:
+        updates["rating"] = body.rating
+    if body.title is not None:
+        updates["title"] = body.title.strip()[:120]
+    if body.text is not None:
+        updates["text"] = body.text.strip()
+    if body.photos is not None:
+        updates["photos"] = body.photos[:6]
+    if body.tags is not None:
+        updates["tags"] = [t for t in body.tags if t in ALLOWED_TAGS]
+    if not updates:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+
+    updates["edited_at"] = datetime.now(timezone.utc)
+    await db.reviews.update_one({"_id": doc["_id"]}, {"$set": updates})
+    # The rating may have moved, so the product's average has to follow.
+    await _recompute(db, doc["product_id"])
+    fresh = await db.reviews.find_one({"_id": doc["_id"]})
+    return serialize(fresh)
+
+
+@router.delete("/{review_id}")
+async def delete_my_review(review_id: str, user: dict = Depends(get_current_user)):
+    db = get_db()
+    doc = await _own_review(db, review_id, user)
+    await db.reviews.delete_one({"_id": doc["_id"]})
+    agg = await _recompute(db, doc["product_id"])
+    return {"deleted": True, **agg}
+
+
 @router.post("/{review_id}/vote")
 async def vote_review(review_id: str, body: VoteIn, user: dict = Depends(get_current_user)):
     db = get_db()
