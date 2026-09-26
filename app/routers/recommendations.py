@@ -40,6 +40,14 @@ def _pop_score(p: dict) -> float:
     )
 
 
+def _variant_name(value) -> str | None:
+    """A size is a variant dict here, but older rows stored a bare string."""
+    if isinstance(value, dict):
+        name = value.get("name")
+        return str(name) if name else None
+    return str(value) if value else None
+
+
 def _content_sim(a: dict, b: dict) -> float:
     score = 0.0
     if a.get("category_id") and a.get("category_id") == b.get("category_id"):
@@ -49,7 +57,11 @@ def _content_sim(a: dict, b: dict) -> float:
     pa, pb = a.get("final_price") or 0, b.get("final_price") or 0
     if pa and pb:
         score += (min(pa, pb) / max(pa, pb)) * 2.0
-    if set(a.get("sizes") or []) & set(b.get("sizes") or []):
+    # Sizes are variant documents on this catalogue, so they can't go straight
+    # into a set — compare them by name, the way colours just below do.
+    sa = {_variant_name(v) for v in (a.get("sizes") or [])}
+    sb = {_variant_name(v) for v in (b.get("sizes") or [])}
+    if sa & sb - {None}:
         score += 1.0
     ca = {c.get("name") for c in (a.get("colors") or []) if isinstance(c, dict)}
     cb = {c.get("name") for c in (b.get("colors") or []) if isinstance(c, dict)}

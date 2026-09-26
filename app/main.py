@@ -177,6 +177,22 @@ async def _record_admin_action(request: Request, status_code: int) -> None:
     })
 
 
+def _cors_headers(request: Request) -> dict:
+    """The CORS middleware sits *inside* this one, so a response built out here
+    has to carry the headers itself. Without them the browser discards the
+    response and the storefront reports a network failure for what was really
+    a server error — which is how a crash in one endpoint used to look like
+    "We couldn't reach the nursery service"."""
+    origin = request.headers.get("origin")
+    if not origin:
+        return {}
+    return {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Credentials": "true",
+        "Vary": "Origin",
+    }
+
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start_time = time.time()
@@ -186,11 +202,23 @@ async def log_requests(request: Request, call_next):
             return JSONResponse(
                 status_code=403,
                 content={"detail": "You don't have access to this section."},
+                headers=_cors_headers(request),
             )
     except Exception:
         pass  # never let the permission check itself break a request
 
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        # An unhandled fault: log the whole traceback so it can be found, and
+        # answer with a real, readable HTTP response instead of a dropped
+        # connection the caller has to guess about.
+        logger.exception(f"💥 [{request.method}] {request.url.path} failed")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Something went wrong on our side. Please try again."},
+            headers=_cors_headers(request),
+        )
     process_time = time.time() - start_time
 
     # Don't clutter logs with static files or health checks if you prefer

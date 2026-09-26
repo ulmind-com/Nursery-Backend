@@ -223,13 +223,25 @@ async def _build_bill(db, items_in, address, coupon, user_id=None):
             if is_eligible and state["unbundled_qty"] > 0:
                 available_units.extend([(state["unit"], state)] * state["unbundled_qty"])
                     
+        # A bundle needs a positive size and a price. Rows saved before those
+        # were validated (or edited straight in the database) can have neither,
+        # and an unusable bundle must not take the whole checkout down with it:
+        # every quote walks this list, so one bad row would break every cart.
+        try:
+            bundle_size = int(combo.get("qty") or 0)
+            bundle_price = float(combo.get("price"))
+        except (TypeError, ValueError):
+            continue
+        if bundle_size <= 0 or bundle_price < 0:
+            continue
+
         available_units.sort(key=lambda x: x[0], reverse=True)
-        num_bundles = len(available_units) // combo.get("qty", 1)
-        
+        num_bundles = len(available_units) // bundle_size
+
         if num_bundles > 0:
-            items_to_bundle = num_bundles * combo["qty"]
+            items_to_bundle = num_bundles * bundle_size
             regular_price_of_bundled = sum(u[0] for u in available_units[:items_to_bundle])
-            bundle_price_total = num_bundles * combo["price"]
+            bundle_price_total = num_bundles * bundle_price
             
             discount_for_this_combo = regular_price_of_bundled - bundle_price_total
             if discount_for_this_combo > 0:
@@ -252,7 +264,7 @@ async def _build_bill(db, items_in, address, coupon, user_id=None):
         order_items.append(
             {
                 "product_id": state["it"].product_id,
-                "title": state["prod"]["title"],
+                "title": state["prod"].get("title") or "Item",
                 "price": state["unit"],
                 "qty": state["it"].qty,
                 "size_variant": state["it"].size_variant,
