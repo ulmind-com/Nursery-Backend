@@ -12,7 +12,7 @@ from app.deps import get_current_user, require_admin
 from app.models.common import serialize, to_object_id
 from app.models.order import OrderCreate, OrderVerify, BulkStatusUpdate
 from app.routers.coupons import get_coupon
-from app.services import razorpay_service
+from app.services import razorpay_service, support
 from app.services.pricing import (
     compute_delivery,
     coupon_discount,
@@ -1017,6 +1017,7 @@ async def cancel_order(
             "cancel_reason": reason.strip()[:300],
         }},
     )
+    await support.close_for_order(db, str(doc["_id"]), "Order cancelled")
     fresh = await db.orders.find_one({"_id": doc["_id"]})
     return serialize(fresh)
 
@@ -1056,6 +1057,12 @@ async def update_status(
             {"$set": {"sold_counted": True, "delivered_at": datetime.now(timezone.utc)}},
         )
 
+    # The support conversation belongs to a live order. Once the order is
+    # delivered (or cancelled) the customer's chat thread is dropped on their
+    # device, so any open handoff ticket for it is resolved here too.
+    if status in ("delivered", "cancelled"):
+        await support.close_for_order(db, str(res["_id"]), f"Order {status}")
+
     return serialize(res)
 
 
@@ -1088,5 +1095,9 @@ async def bulk_update_status(body: BulkStatusUpdate):
                     {"_id": o["_id"]},
                     {"$set": {"sold_counted": True, "delivered_at": datetime.now(timezone.utc)}},
                 )
+
+    if body.status in ("delivered", "cancelled"):
+        for o in orders:
+            await support.close_for_order(db, str(o["_id"]), f"Order {body.status}")
 
     return {"modified_count": len(orders), "status": body.status}
