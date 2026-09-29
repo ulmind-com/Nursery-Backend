@@ -72,6 +72,36 @@ class CodConfig(BaseModel):
     note: str = "Pay in cash when your plants are delivered."
 
 
+class RewardMilestone(BaseModel):
+    """One stop on the cart's unlock rail."""
+    amount: float = 0                  # cart subtotal that unlocks this reward
+    label: str = ""                    # "Free Shipping", "Free gift", "₹100 off"
+    caption: str = ""                  # optional second line under the label
+    icon: str = ""                     # PNG uploaded from the admin panel
+    kind: str = "gift"                 # shipping | gift | discount — picks the fallback art
+
+
+class RewardsConfig(BaseModel):
+    """The green-and-yellow unlock rail shown in the cart.
+
+    Everything a customer sees here is editable from the admin panel: how many
+    stops there are, what each one is worth, what it is called and which PNG
+    sits on it.
+    """
+    enabled: bool = True
+    show_in_cart: bool = True
+    show_sticky_bar: bool = True
+    # `{amount}` is the gap still to close, `{reward}` the next stop's label.
+    teaser: str = "Add {amount} more to unlock {reward}"
+    unlocked: str = "All rewards unlocked"
+    milestones: list[RewardMilestone] = Field(default=[
+        RewardMilestone(amount=499, label="Free Shipping", kind="shipping"),
+        RewardMilestone(amount=899, label="Free gift", kind="gift"),
+        RewardMilestone(amount=1499, label="₹100 off", kind="discount"),
+        RewardMilestone(amount=2499, label="₹300 off", kind="discount"),
+    ])
+
+
 class Settings(BaseModel):
     currency: str = "₹"
     currency_code: str = "INR"
@@ -82,6 +112,7 @@ class Settings(BaseModel):
     support: SupportConfig = SupportConfig()
     plant_guarantee: PlantGuaranteeConfig = PlantGuaranteeConfig()
     cod: CodConfig = CodConfig()
+    rewards: RewardsConfig = RewardsConfig()
 
     announcements: list[str] = Field(default=[
         "🌿 Free shipping on orders above ₹499",
@@ -101,4 +132,5 @@ class SettingsUpdate(BaseModel):
     support: SupportConfig | None = None
     plant_guarantee: PlantGuaranteeConfig | None = None
     cod: CodConfig | None = None
+    rewards: RewardsConfig | None = None
     announcements: list[str] | None = None
