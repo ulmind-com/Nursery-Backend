@@ -13,6 +13,42 @@ from app.services.waitlist_service import notify_restocked_safely, restocked_siz
 router = APIRouter(prefix="/products", tags=["products"])
 
 
+# ── Facets ───────────────────────────────────────────────────────────────────
+# One definition drives both the catalogue filter and the `/facets` response, so
+# a filter can never offer a value the catalogue does not actually hold. `field`
+# is the Mongo path; a `sizes.` path lives on the variants, everything else on
+# the product. `param` is the query-string name the storefront sends.
+FACETS: list[dict] = [
+    {"param": "plant_type", "label": "Type of Plants", "field": "plant_spec.plant_type"},
+    {"param": "sunlight", "label": "Sunlight Requirement", "field": "plant_spec.sunlight"},
+    {"param": "watering", "label": "Watering Requirement", "field": "plant_spec.watering"},
+    {"param": "difficulty", "label": "Care Level", "field": "plant_spec.difficulty_level"},
+    {"param": "growth_rate", "label": "Growth Pattern", "field": "plant_spec.growth_rate"},
+    {"param": "season", "label": "Growing Season", "field": "plant_spec.season"},
+    {"param": "flower_color", "label": "Flower Type", "field": "plant_spec.flower_color"},
+    {"param": "soil_type", "label": "Soil Type", "field": "plant_spec.soil_type"},
+    {"param": "pot_type", "label": "Growing Container Type", "field": "sizes.pot_type"},
+    {"param": "pot_size", "label": "Pot Size", "field": "sizes.pot_size"},
+]
+FACET_BY_PARAM = {f["param"]: f for f in FACETS}
+
+IN_STOCK_QUERY = {"$or": [
+    {"sizes.stock": {"$gt": 0}},
+    {"sizes": {"$in": [None, []]}, "stock": {"$gt": 0}},
+]}
+
+# Yes/no facets, rendered as a checkbox each rather than a value list.
+FLAG_FACETS: list[dict] = [
+    {"param": "air_purifying", "label": "Air purifying", "field": "plant_spec.air_purifying"},
+    {"param": "pet_safe", "label": "Pet safe", "field": "plant_spec.pet_safe"},
+    {"param": "flowering", "label": "Flowering", "field": "plant_spec.flowering"},
+    {"param": "fragrant", "label": "Fragrant", "field": "plant_spec.fragrant"},
+    {"param": "medicinal", "label": "Medicinal", "field": "plant_spec.medicinal"},
+    {"param": "is_bestseller", "label": "Bestsellers", "field": "is_bestseller"},
+    {"param": "is_new_arrival", "label": "New arrivals", "field": "is_new_arrival"},
+]
+
+
 def _total_stock(doc: dict) -> int:
     return total_stock(doc)
 
@@ -41,9 +77,21 @@ async def list_products(
     category_id: str | None = None,
     q: str | None = Query(default=None),
     brand: str | None = None,
-    plant_type: str | None = None,
-    sunlight: str | None = None,
-    difficulty: str | None = None,
+    # Facet filters accept the value repeated, so a shopper can tick several
+    # boxes in one group (?sunlight=Low Light&sunlight=Full Sun).
+    plant_type: list[str] | None = Query(default=None),
+    sunlight: list[str] | None = Query(default=None),
+    watering: list[str] | None = Query(default=None),
+    difficulty: list[str] | None = Query(default=None),
+    growth_rate: list[str] | None = Query(default=None),
+    season: list[str] | None = Query(default=None),
+    flower_color: list[str] | None = Query(default=None),
+    soil_type: list[str] | None = Query(default=None),
+    pot_type: list[str] | None = Query(default=None),
+    pot_size: list[str] | None = Query(default=None),
+    in_stock: bool | None = None,
+    fragrant: bool | None = None,
+    medicinal: bool | None = None,
     pet_safe: bool | None = None,
     air_purifying: bool | None = None,
     flowering: bool | None = None,
@@ -57,6 +105,12 @@ async def list_products(
     skip: int = 0,
     admin: bool = False,
 ):
+    locals_values = {
+        "plant_type": plant_type, "sunlight": sunlight, "watering": watering,
+        "difficulty": difficulty, "growth_rate": growth_rate, "season": season,
+        "flower_color": flower_color, "soil_type": soil_type,
+        "pot_type": pot_type, "pot_size": pot_size,
+    }
     db = get_db()
     query: dict = {}
     if not admin:
@@ -67,12 +121,16 @@ async def list_products(
         query["$text"] = {"$search": q}
     if brand:
         query["brand"] = brand
-    if plant_type:
-        query["plant_spec.plant_type"] = plant_type
-    if sunlight:
-        query["plant_spec.sunlight"] = sunlight
-    if difficulty:
-        query["plant_spec.difficulty_level"] = difficulty
+    for spec in FACETS:
+        chosen = locals_values.get(spec["param"])
+        if chosen:
+            query[spec["field"]] = {"$in": chosen}
+    if in_stock is not None:
+        query.update(IN_STOCK_QUERY if in_stock else {"$nor": [IN_STOCK_QUERY]})
+    if fragrant is not None:
+        query["plant_spec.fragrant"] = fragrant
+    if medicinal is not None:
+        query["plant_spec.medicinal"] = medicinal
     if pet_safe is not None:
         query["plant_spec.pet_safe"] = pet_safe
     if air_purifying is not None:
@@ -108,6 +166,68 @@ async def list_products(
     cursor = db.products.find(query).skip(skip).limit(limit).sort(sort_field, sort_dir)
     docs = await cursor.to_list(length=limit)
     return [_decorate(d) for d in docs]
+
+
+@router.get("/facets")
+async def product_facets(category_id: str | None = None):
+    """The filter sidebar, derived from the catalogue rather than hard-coded.
+
+    Every group lists only the values products actually carry, each with the
+    number of products behind it, so a shopper can never pick a filter that
+    returns an empty grid. A group with nothing in it is left out entirely.
+    """
+    db = get_db()
+    base: dict = {"is_active": True}
+    if category_id:
+        base["category_id"] = {"$in": await _category_ids_with_children(db, category_id)}
+
+    groups = []
+    for spec in FACETS:
+        pipeline: list[dict] = [{"$match": base}]
+        if spec["field"].startswith("sizes."):
+            pipeline.append({"$unwind": "$sizes"})
+        # Count products, not variants — one product with three pot sizes is
+        # still one result behind the "Ceramic Pot" box.
+        pipeline += [
+            {"$group": {"_id": f"${spec['field']}", "ids": {"$addToSet": "$_id"}}},
+            {"$project": {"count": {"$size": "$ids"}}},
+            {"$sort": {"count": -1, "_id": 1}},
+        ]
+        rows = await db.products.aggregate(pipeline).to_list(length=100)
+        options = [
+            {"value": r["_id"], "count": r["count"]}
+            for r in rows if isinstance(r["_id"], str) and r["_id"].strip()
+        ]
+        if options:
+            groups.append({"param": spec["param"], "label": spec["label"], "options": options})
+
+    flags = []
+    for spec in FLAG_FACETS:
+        count = await db.products.count_documents({**base, spec["field"]: True})
+        if count:
+            flags.append({"param": spec["param"], "label": spec["label"], "count": count})
+
+    in_stock = await db.products.count_documents({**base, **IN_STOCK_QUERY})
+    total = await db.products.count_documents(base)
+
+    prices = await db.products.aggregate([
+        {"$match": base},
+        {"$group": {"_id": None, "min": {"$min": "$price"}, "max": {"$max": "$price"}}},
+    ]).to_list(length=1)
+
+    return {
+        "total": total,
+        "availability": [
+            {"value": "in_stock", "label": "In stock", "count": in_stock},
+            {"value": "out_of_stock", "label": "Out of stock", "count": total - in_stock},
+        ],
+        "price": {
+            "min": (prices[0]["min"] if prices and prices[0].get("min") is not None else 0),
+            "max": (prices[0]["max"] if prices and prices[0].get("max") is not None else 0),
+        },
+        "groups": groups,
+        "flags": flags,
+    }
 
 
 @router.get("/{product_id}")

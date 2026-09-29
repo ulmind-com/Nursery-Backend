@@ -68,6 +68,19 @@ SECTION_TYPES: list[dict] = [
         "item_fields": [_f("lottie", "Animation (.json)", "lottie"), _f("title", "Label")],
     },
     {
+        "type": "bestsellers",
+        "label": "Bestsellers",
+        "description": "Two rows of the catalogue's bestselling products, pulled live.",
+        "fields": [
+            _f("title", "Heading"),
+            _f("subtitle", "Sub-heading"),
+            _f("cta_label", "Link label"),
+            _f("cta_link", "Link target", "link"),
+            _f("limit", "How many products", "number"),
+        ],
+        "item_fields": [],
+    },
+    {
         "type": "video_reel",
         "label": "Featured Reels",
         "description": "The grid of vertical autoplaying clips.",
@@ -80,6 +93,19 @@ SECTION_TYPES: list[dict] = [
         "description": "Two square promo artworks side by side.",
         "fields": [_f("title", "Heading"), _f("subtitle", "Sub-heading")],
         "item_fields": [_f("image", "Artwork", "image"), _f("link", "Links to", "link"), _f("title", "Alt text")],
+    },
+    {
+        "type": "low_effort",
+        "label": "Low-Effort Plants",
+        "description": "Two rows of the easiest plants to keep alive, pulled live from the catalogue.",
+        "fields": [
+            _f("title", "Heading"),
+            _f("subtitle", "Sub-heading"),
+            _f("cta_label", "Link label"),
+            _f("cta_link", "Link target", "link"),
+            _f("limit", "How many products", "number"),
+        ],
+        "item_fields": [],
     },
     {
         "type": "bhidu",
@@ -102,6 +128,20 @@ SECTION_TYPES: list[dict] = [
         "description": "The drifting marquee of offer artwork.",
         "fields": [_f("title", "Heading")],
         "item_fields": [_f("image", "Artwork", "image"), _f("link", "Links to", "link"), _f("title", "Alt text")],
+    },
+    {
+        "type": "combos",
+        "label": "Ready to Buy Combos",
+        "description": "Two rows of bundle cards. Bundles come from Combos.",
+        "source": "combos",
+        "fields": [
+            _f("title", "Heading"),
+            _f("subtitle", "Sub-heading"),
+            _f("cta_label", "Link label"),
+            _f("cta_link", "Link target", "link"),
+            _f("limit", "How many bundles", "number"),
+        ],
+        "item_fields": [],
     },
     {
         "type": "self_watering",
@@ -322,6 +362,14 @@ HOME_DEFAULTS: list[dict] = [
         ],
     },
     {
+        "type": "bestsellers",
+        "title": "Bestsellers",
+        "subtitle": "The plants and picks our customers keep coming back for",
+        "cta_label": "View all",
+        "cta_link": "/plants",
+        "limit": 10,
+    },
+    {
         "type": "video_reel",
         "title": "Featured Reels",
         "subtitle": "Get inspired by our beautiful community spaces",
@@ -344,6 +392,14 @@ HOME_DEFAULTS: list[dict] = [
         ],
     },
     {
+        "type": "low_effort",
+        "title": "Low-Effort Plants",
+        "subtitle": "Hard to kill, easy to love — pick one and forget the fuss",
+        "cta_label": "View all",
+        "cta_link": "/plants",
+        "limit": 10,
+    },
+    {
         "type": "bhidu",
         "badge_label": "Bhidu",
         "badge_label_2": "Approved",
@@ -361,6 +417,14 @@ HOME_DEFAULTS: list[dict] = [
         {"image": "/card/offer-5.jpg", "link": "/offers", "title": "Indoor plant bundle offer"},
         {"image": "/card/offer-6.jpg", "link": "/offers", "title": "Gardening essentials offer"},
     ]},
+    {
+        "type": "combos",
+        "title": "Ready to Buy Combos",
+        "subtitle": "Hand-picked bundles — everything you need, priced together",
+        "cta_label": "View all combos",
+        "cta_link": "/combos",
+        "limit": 8,
+    },
     {
         "type": "self_watering",
         "title": "About Self-Watering Planters",
@@ -495,15 +559,59 @@ def _check_page(page: str) -> str:
     return page
 
 
-async def seed_page(db, page: str, *, force: bool = False) -> int:
-    """Write the shipped layout for `page`. No-op when the page already has bands."""
-    if not force and await db.page_sections.count_documents({"page": page}):
+async def _backfill(db, page: str, defaults: list[dict]) -> int:
+    """Add bands that shipped after this page was first seeded.
+
+    A page seeded on an older build is missing every band added since, and the
+    only way to get them used to be a reset — which throws away the admin's
+    copy and artwork. Instead each absent band is slotted in behind the shipped
+    band it follows, so a page nobody has reordered ends up with the shipped
+    layout, and one that has been reordered keeps its arrangement.
+    """
+    have = set(await db.page_sections.distinct("type", {"page": page}))
+    if all(d["type"] in have for d in defaults):
         return 0
+
+    docs = await db.page_sections.find({"page": page}).sort("order", 1).to_list(length=200)
+    order_of = {d.get("type"): d.get("order", 0) for d in docs}
+    now = datetime.now(timezone.utc)
+
+    added: list[dict] = []
+    for i, default in enumerate(defaults):
+        if default["type"] in have:
+            continue
+        # Half a step behind the nearest earlier band still on the page; -1 puts
+        # a band that ships first at the very top.
+        before = next((defaults[j]["type"] for j in range(i - 1, -1, -1) if defaults[j]["type"] in order_of), None)
+        doc = _blank(default["type"])
+        doc.update(default)
+        doc.update({
+            "page": page,
+            "order": order_of[before] + 0.5 if before else -1.0,
+            "active": True,
+            "created_at": now,
+            "updated_at": now,
+        })
+        added.append(doc)
+
+    await db.page_sections.insert_many(added)
+    # insert_many stamps `_id` on the dicts, so both lists renumber together.
+    for order, doc in enumerate(sorted(docs + added, key=lambda d: d.get("order", 0))):
+        await db.page_sections.update_one({"_id": doc["_id"]}, {"$set": {"order": order}})
+    return len(added)
+
+
+async def seed_page(db, page: str, *, force: bool = False) -> int:
+    """Write the shipped layout for `page`. An already-seeded page only gains
+    the bands that shipped after it was seeded — its edits stay untouched."""
+    defaults = HOME_DEFAULTS if page == "home" else []
+    if not force and await db.page_sections.count_documents({"page": page}):
+        return await _backfill(db, page, defaults)
     if force:
         await db.page_sections.delete_many({"page": page})
     now = datetime.now(timezone.utc)
     docs = []
-    for order, default in enumerate(HOME_DEFAULTS if page == "home" else []):
+    for order, default in enumerate(defaults):
         doc = _blank(default["type"])
         doc.update(default)
         doc.update({"page": page, "order": order, "active": True, "created_at": now, "updated_at": now})
