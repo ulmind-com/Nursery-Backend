@@ -185,13 +185,20 @@ async def applicable_coupons(
             "max_discount": c.get("max_discount", 0),
             "description": c.get("description", ""),
             "first_order_only": bool(c.get("first_order_only")),
-            "applicable": applicable and discount > 0,
+            "free_shipping": bool(c.get("free_shipping")),
+            # A free-delivery coupon saves real money without moving `discount`,
+            # so it counts as usable too — otherwise auto-apply would skip it.
+            "applicable": applicable and (discount > 0 or bool(c.get("free_shipping"))),
             "discount": discount,
             "needed_more": round(max(0.0, min_order - subtotal), 2) if not applicable else 0.0,
         })
 
     # Best usable saving first; then locked ones by how close they are to unlocking.
-    offers.sort(key=lambda o: (not o["applicable"], -o["discount"], o["needed_more"]))
+    # Best usable saving first; a free-delivery coupon outranks nothing but the
+    # locked ones, and locked offers trail by how close they are to unlocking.
+    offers.sort(
+        key=lambda o: (not o["applicable"], -o["discount"], not o["free_shipping"], o["needed_more"])
+    )
     best = next((o["code"] for o in offers if o["applicable"]), None)
     best_discount = next((o["discount"] for o in offers if o["applicable"]), 0.0)
     return {"offers": offers, "best_code": best, "best_discount": best_discount}
