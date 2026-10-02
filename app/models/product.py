@@ -50,6 +50,10 @@ class ProductCreate(BaseModel):
     tags: list[str] = Field(default_factory=list)
     brand: str | None = None
     category_id: str | None = None
+    # Extra shelves the product also belongs to — "Shop by Space" rooms and any
+    # other cross-cutting collection. The catalogue matches either field, so a
+    # plant can sit in Bedroom and Office without losing its home category.
+    extra_category_ids: list[str] = Field(default_factory=list)
 
     sku: str | None = None
     shipping_weight: float | None = None
@@ -95,6 +99,7 @@ class ProductUpdate(BaseModel):
     tags: list[str] | None = None
     brand: str | None = None
     category_id: str | None = None
+    extra_category_ids: list[str] | None = None
     sku: str | None = None
     shipping_weight: float | None = None
     mrp: float | None = None

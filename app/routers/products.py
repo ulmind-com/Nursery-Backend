@@ -72,6 +72,14 @@ async def _category_ids_with_children(db, category_id: str) -> list[str]:
     return ids
 
 
+async def _category_match(db, category_id: str) -> dict:
+    """Match a category by either its home field or the extra shelves, so a
+    plant filed under Indoor Plants still shows on the Bedroom page it was
+    added to from the admin panel."""
+    ids = await _category_ids_with_children(db, category_id)
+    return {"$or": [{"category_id": {"$in": ids}}, {"extra_category_ids": {"$in": ids}}]}
+
+
 @router.get("")
 async def list_products(
     category_id: str | None = None,
@@ -116,7 +124,9 @@ async def list_products(
     if not admin:
         query["is_active"] = True
     if category_id:
-        query["category_id"] = {"$in": await _category_ids_with_children(db, category_id)}
+        # kept under $and so it cannot collide with the top-level $or that the
+        # in-stock filter sets
+        query["$and"] = query.get("$and", []) + [await _category_match(db, category_id)]
     if q:
         query["$text"] = {"$search": q}
     if brand:
@@ -179,7 +189,7 @@ async def product_facets(category_id: str | None = None):
     db = get_db()
     base: dict = {"is_active": True}
     if category_id:
-        base["category_id"] = {"$in": await _category_ids_with_children(db, category_id)}
+        base["$and"] = [await _category_match(db, category_id)]
 
     groups = []
     for spec in FACETS:
